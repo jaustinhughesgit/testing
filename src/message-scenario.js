@@ -74,7 +74,10 @@ function assertStep(step, actual, index) {
   if (expected.operations) {
     const missing = expected.operations.filter((operation) => !actual.operations.includes(operation));
     if (missing.length) {
-      throw new Error(`${label}: missing derived operation(s) ${missing.join(", ")}; received ${JSON.stringify(actual.operations)}`);
+      throw new Error(
+        `${label}: missing derived operation(s) ${missing.join(", ")}; received ${JSON.stringify(actual.operations)}; `
+        + `essence ${JSON.stringify(actual.essence)}`
+      );
     }
   }
 }
