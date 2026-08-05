@@ -25,7 +25,7 @@ The local state file contains a test access token and test-only private key mate
 
 ## Contract
 
-Requests use the website's API transport contract: POST to the configured cookies endpoint, set `X-Original-Host` to `/<action>/<path...>`, and replay the issued `accessToken` cookie. Responses preserve the raw API envelope and expose the Compute payload for assertions.
+Requests use the website's API transport contract: POST to the configured cookies endpoint, set `X-Original-Host` to `/<action>/<path...>`, and replay the issued token through the cookie-compatible `X-accessToken` transport. Responses preserve the raw API envelope and expose the Compute payload for assertions.
 
 ## Test placement
 

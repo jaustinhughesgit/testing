@@ -55,7 +55,7 @@ export async function main(argv = process.argv.slice(2)) {
   if (area === "account" && command === "bootstrap") {
     const result = await client.call("newGroup", { path: ["newUser", "newUser"], body: {} });
     const data = result.data?.response ?? result.data;
-    state.update({ entity: data?.entity, subdomain: data?.file });
+    state.update({ userId: data?.entity, subdomain: data?.file });
     output(data);
     return;
   }
@@ -71,7 +71,7 @@ export async function main(argv = process.argv.slice(2)) {
     await client.call("emailVerify", { body: verification });
     const keys = await createTestDeviceKeys();
     const enrolled = await client.call("createEncryption", { body: { email, entity, ...keys.public } });
-    state.update({ entity, subdomain: account?.file, emailVerified: true, deviceKeys: keys });
+    state.update({ userId: account?.entity, subdomain: account?.file, emailVerified: true, deviceKeys: keys });
     output({ ok: true, entity, subdomain: account?.file, encryption: enrolled.data });
     return;
   }
@@ -87,7 +87,7 @@ export async function main(argv = process.argv.slice(2)) {
       : await waitForVerificationUrl({ ...config.mail, recipient: requireFlag(flags, "email") });
     const verification = parseVerificationUrl(verificationUrl);
     const result = await client.call("emailVerify", { body: verification });
-    state.update({ entity: verification.entity, emailVerified: true });
+    state.update({ subdomain: verification.entity, emailVerified: true });
     output(result.data);
     return;
   }
@@ -96,7 +96,7 @@ export async function main(argv = process.argv.slice(2)) {
     const entity = requireFlag(flags, "entity");
     const keys = await createTestDeviceKeys();
     const result = await client.call("createEncryption", { body: { email, entity, ...keys.public } });
-    state.update({ entity, deviceKeys: keys });
+    state.update({ userId: String(result.data?.userID || ""), subdomain: entity, deviceKeys: keys });
     output(result.data);
     return;
   }

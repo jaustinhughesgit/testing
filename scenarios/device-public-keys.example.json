@@ -1,0 +1,18 @@
+{
+  "name": "Registered device public keys are retrievable",
+  "steps": [
+    {
+      "action": "getUserPubKeys",
+      "body": {
+        "userID": "${state.userId}",
+        "requestId": "headless-acceptance"
+      },
+      "expect": {
+        "pubEnc": { "$type": "string" },
+        "pubSig": { "$type": "string" },
+        "latestKeyVersion": 1,
+        "requestId": "headless-acceptance"
+      }
+    }
+  ]
+}

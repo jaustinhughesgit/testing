@@ -1,0 +1,16 @@
+{
+  "name": "Account email remains verified",
+  "steps": [
+    {
+      "action": "checkEmailVerified",
+      "body": {
+        "entity": "${state.subdomain}"
+      },
+      "expect": {
+        "ok": true,
+        "emailVerified": true,
+        "userID": { "$type": "number" }
+      }
+    }
+  ]
+}

@@ -29,7 +29,10 @@ export class OneVarApiClient {
       "Content-Type": "application/json",
       "X-Original-Host": `${this.originalHost}/${suffix}`
     };
-    if (state.accessToken) headers.Cookie = `accessToken=${encodeURIComponent(state.accessToken)}`;
+    if (state.accessToken) {
+      headers.Cookie = `accessToken=${encodeURIComponent(state.accessToken)}`;
+      headers["X-accessToken"] = state.accessToken;
+    }
 
     const response = await this.fetchImpl(this.apiUrl, {
       method: "POST",
