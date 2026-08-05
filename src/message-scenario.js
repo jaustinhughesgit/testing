@@ -110,7 +110,10 @@ export async function runMessageScenarioObject(scenario, { websiteUrl, fetchImpl
 
     const rows = Array.isArray(interpretation.essence) ? interpretation.essence : [];
     let answer = [];
-    if (classification.kind === "statement") graphStore.ingestEssenceRows(rows);
+    if (classification.kind === "statement") {
+      graphStore.applyMutationOps(interpretation.mutationOps || []);
+      graphStore.ingestEssenceRows(rows);
+    }
     if (classification.kind === "question") {
       const query = graphStore.queryByEssenceTemplates(rows);
       answer = Array.from(query?.vars?.ask || []);
@@ -121,6 +124,9 @@ export async function runMessageScenarioObject(scenario, { websiteUrl, fetchImpl
       kind: classification.kind,
       answer,
       operations: derivedOperations(rows),
+      mutations: Array.isArray(interpretation.mutationOps)
+        ? interpretation.mutationOps.map((operation) => operation.type)
+        : [],
       essence: rows,
     };
     assertStep(step, result, index);

@@ -1,0 +1,25 @@
+{
+  "name": "inventory multiple events",
+  "steps": [
+    {
+      "name": "record starting inventory",
+      "input": "The hardware store has 20 hammers.",
+      "expect": { "kind": "statement" }
+    },
+    {
+      "name": "record first sale",
+      "input": "The hardware store sold 4 hammers.",
+      "expect": { "kind": "statement" }
+    },
+    {
+      "name": "record second sale",
+      "input": "The hardware store sold 3 more hammers.",
+      "expect": { "kind": "statement" }
+    },
+    {
+      "name": "sum reductions before subtracting",
+      "input": "How many hammers remain?",
+      "expect": { "kind": "question", "answer": ["13"], "operations": ["add", "subtract"] }
+    }
+  ]
+}

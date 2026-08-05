@@ -1,0 +1,30 @@
+{
+  "name": "inventory entity isolation",
+  "steps": [
+    {
+      "name": "record north inventory",
+      "input": "The North Store has 20 hammers.",
+      "expect": { "kind": "statement" }
+    },
+    {
+      "name": "record south inventory",
+      "input": "The South Store has 12 hammers.",
+      "expect": { "kind": "statement" }
+    },
+    {
+      "name": "record north sale",
+      "input": "The North Store sold 4 hammers.",
+      "expect": { "kind": "statement" }
+    },
+    {
+      "name": "calculate north independently",
+      "input": "How many hammers remain at the North Store?",
+      "expect": { "kind": "question", "answer": ["16"], "operations": ["subtract"] }
+    },
+    {
+      "name": "preserve south inventory",
+      "input": "How many hammers remain at the South Store?",
+      "expect": { "kind": "question", "answer": ["12"] }
+    }
+  ]
+}

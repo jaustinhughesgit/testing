@@ -1,0 +1,40 @@
+{
+  "name": "inventory correction and restock",
+  "steps": [
+    {
+      "name": "record starting inventory",
+      "input": "The hardware store has 20 hammers.",
+      "expect": { "kind": "statement" }
+    },
+    {
+      "name": "record first sale",
+      "input": "The hardware store sold 4 hammers.",
+      "expect": { "kind": "statement" }
+    },
+    {
+      "name": "record second sale",
+      "input": "The hardware store sold 3 more hammers.",
+      "expect": { "kind": "statement" }
+    },
+    {
+      "name": "correct second sale",
+      "input": "Correction: the second hammer sale was 2, not 3.",
+      "expect": { "kind": "statement" }
+    },
+    {
+      "name": "use corrected event",
+      "input": "How many hammers remain?",
+      "expect": { "kind": "question", "answer": ["14"], "operations": ["add", "subtract"] }
+    },
+    {
+      "name": "record restock",
+      "input": "The hardware store received 10 more hammers.",
+      "expect": { "kind": "statement" }
+    },
+    {
+      "name": "combine increases and reductions",
+      "input": "How many hammers remain?",
+      "expect": { "kind": "question", "answer": ["24"], "operations": ["add", "subtract"] }
+    }
+  ]
+}

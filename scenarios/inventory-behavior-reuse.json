@@ -1,0 +1,25 @@
+{
+  "name": "inventory behavior reuse",
+  "steps": [
+    {
+      "name": "declare inventory behavior",
+      "input": "When the store sells an item, subtract the quantity sold from inventory.",
+      "expect": { "kind": "command", "operations": ["subtract"] }
+    },
+    {
+      "name": "record drill inventory",
+      "input": "The store has 10 drills.",
+      "expect": { "kind": "statement" }
+    },
+    {
+      "name": "record drill sale",
+      "input": "The store sold 2 drills.",
+      "expect": { "kind": "statement" }
+    },
+    {
+      "name": "reuse behavior for drills",
+      "input": "How many drills remain?",
+      "expect": { "kind": "question", "answer": ["8"], "operations": ["subtract"] }
+    }
+  ]
+}
