@@ -99,6 +99,14 @@ function assertStep(step, actual, index) {
       );
     }
   }
+  if (expected.mutations) {
+    const missing = expected.mutations.filter((mutation) => !actual.mutations.includes(mutation));
+    if (missing.length) {
+      throw new Error(
+        `${label}: missing mutation(s) ${missing.join(", ")}; received ${JSON.stringify(actual.mutations)}`
+      );
+    }
+  }
 }
 
 export async function runMessageScenarioObject(scenario, { websiteUrl, fetchImpl = fetch } = {}) {
