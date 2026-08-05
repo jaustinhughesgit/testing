@@ -2,12 +2,13 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadConfig, requireConnectionConfig, assertResetAllowed } from "./config.js";
+import { loadConfig, requireConnectionConfig, requireWebsiteConfig, assertResetAllowed } from "./config.js";
 import { StateStore } from "./state-store.js";
 import { OneVarApiClient } from "./api-client.js";
 import { createTestDeviceKeys } from "./device-keys.js";
 import { parseVerificationUrl, waitForVerificationUrl } from "./mailbox.js";
 import { runScenario } from "./scenario.js";
+import { runMessageScenario } from "./message-scenario.js";
 
 function parseArgs(argv) {
   const positional = [];
@@ -40,10 +41,17 @@ export async function main(argv = process.argv.slice(2)) {
   const { positional, flags } = parseArgs(argv);
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
   const config = loadConfig({ cwd: root, configPath: flags.config });
+  const [area, command, ...rest] = positional;
+  if (area === "message" && command === "run") {
+    requireWebsiteConfig(config);
+    if (!rest[0]) throw new Error("message run requires a scenario file");
+    output(await runMessageScenario(path.resolve(process.cwd(), rest[0]), { websiteUrl: config.websiteUrl }));
+    return;
+  }
+
   requireConnectionConfig(config);
   const state = new StateStore(config.stateDirectory, String(flags.profile || "default"));
   const client = new OneVarApiClient({ ...config, stateStore: state });
-  const [area, command, ...rest] = positional;
 
   if (area === "api" && command === "call") {
     const [action, ...requestPath] = rest;

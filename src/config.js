@@ -17,6 +17,7 @@ export function loadConfig({ cwd = process.cwd(), env = process.env, configPath 
     environment: env.ONEVAR_TEST_ENVIRONMENT || stored.environment || "",
     apiUrl: env.ONEVAR_TEST_API_URL || stored.apiUrl || "",
     originalHost: env.ONEVAR_TEST_ORIGINAL_HOST || stored.originalHost || "",
+    websiteUrl: env.ONEVAR_TEST_WEBSITE_URL || stored.websiteUrl || stored.originalHost || "",
     stateDirectory: path.resolve(cwd, env.ONEVAR_TEST_STATE_DIRECTORY || stored.stateDirectory || ".state"),
     mail: {
       mode: env.ONEVAR_TEST_MAIL_MODE || stored.mail?.mode || "mailbox",
@@ -34,7 +35,14 @@ export function loadConfig({ cwd = process.cwd(), env = process.env, configPath 
 
   if (config.apiUrl) new URL(config.apiUrl);
   if (config.originalHost) new URL(config.originalHost);
+  if (config.websiteUrl) new URL(config.websiteUrl);
   return config;
+}
+
+export function requireWebsiteConfig(config) {
+  if (!config.websiteUrl) {
+    throw new Error(`websiteUrl is required; set ONEVAR_TEST_WEBSITE_URL or add it to ${config.configFile}`);
+  }
 }
 
 export function requireConnectionConfig(config) {

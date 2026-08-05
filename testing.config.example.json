@@ -2,6 +2,7 @@
   "environment": "local",
   "apiUrl": "http://localhost:3001/cookies",
   "originalHost": "http://localhost:3000",
+  "websiteUrl": "http://localhost:3000",
   "stateDirectory": ".state",
   "mail": {
     "mode": "mailbox",

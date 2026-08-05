@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { assertResetAllowed } from "../src/config.js";
+import { assertResetAllowed, requireWebsiteConfig } from "../src/config.js";
 
 function config(overrides = {}) {
   return {
@@ -20,4 +20,9 @@ test("rejects production, wrong hosts, and wrong confirmation", () => {
   assert.throws(() => assertResetAllowed(config({ environment: "production" }), "reset:production"), /forbidden/);
   assert.throws(() => assertResetAllowed(config({ apiUrl: "https://api.example.test/cookies" }), "reset:local"), /not explicitly allowed/);
   assert.throws(() => assertResetAllowed(config(), "yes"), /exactly/);
+});
+
+test("message scenarios require an explicit website endpoint", () => {
+  assert.throws(() => requireWebsiteConfig({ websiteUrl: "", configFile: "test.json" }), /websiteUrl is required/);
+  assert.doesNotThrow(() => requireWebsiteConfig({ websiteUrl: "https://1var.example" }));
 });

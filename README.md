@@ -35,6 +35,11 @@ node src/cli.js encryption setup --email coach@example.test --entity 1v4r-exampl
 # Run a reusable JSON acceptance scenario.
 node src/cli.js scenario run scenarios/smoke.example.json
 
+# Run messages through the published classifier/Essence endpoints and the
+# published browser-local graph runtime, preserving one ContextDB across turns.
+ONEVAR_TEST_WEBSITE_URL=https://1var.com \
+  node src/cli.js message run scenarios/hardware-store-messages.json
+
 # Reset only an explicitly enabled, server-authorized test environment.
 node src/cli.js db reset --confirm reset:local
 ```
@@ -50,5 +55,7 @@ Every command accepts `--config <path>` and `--profile <name>`. `api call` accep
 5. Connect the successful contract to `aws` and add only the browser-specific integration check.
 
 Email verification uses a real test mailbox adapter; it does not turn verification off. Device setup uses Node WebCrypto for a test device. Real WebAuthn enrollment still needs a browser test because user activation and authenticator behavior cannot be proven headlessly by this client.
+
+Message scenarios download the website's published worker-safe graph runtime and call its public classification and Essence routes. This avoids copying interpretation or ContextDB semantics into `testing`; browser persistence, Path lifecycle, rendering, and user activation remain separate browser tests.
 
 Database reset is deliberately double-gated. The CLI rejects production-like targets and demands explicit configuration and confirmation. Compute independently requires `TEST_RESET_ENABLED=true`, an exact `TEST_RESET_ENVIRONMENT_ID`, and the authenticated user's ID in `TEST_RESET_ALLOWED_USER_IDS`.

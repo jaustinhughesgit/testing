@@ -1,0 +1,50 @@
+{
+  "name": "hardware store message memory and arithmetic",
+  "steps": [
+    {
+      "name": "record hammer inventory",
+      "input": "The hardware store has 20 hammers.",
+      "expect": { "kind": "statement" }
+    },
+    {
+      "name": "recall hammer inventory",
+      "input": "How many hammers does the hardware store have?",
+      "expect": { "kind": "question", "answer": ["20"] }
+    },
+    {
+      "name": "record screwdriver inventory",
+      "input": "The hardware store has 30 screwdrivers.",
+      "expect": { "kind": "statement" }
+    },
+    {
+      "name": "keep item quantities isolated",
+      "input": "How many hammers does the hardware store have?",
+      "expect": { "kind": "question", "answer": ["20"] }
+    },
+    {
+      "name": "record hammer sale",
+      "input": "The hardware store sold 4 hammers.",
+      "expect": { "kind": "statement" }
+    },
+    {
+      "name": "calculate remaining hammers",
+      "input": "How many hammers remain?",
+      "expect": { "kind": "question", "answer": ["16"], "operations": ["subtract"] }
+    },
+    {
+      "name": "interpret an immediate subtraction rule",
+      "input": "When the store sells an item, subtract the quantity sold from inventory.",
+      "expect": { "kind": "command", "operations": ["subtract"] }
+    },
+    {
+      "name": "record screwdriver sale",
+      "input": "The store sold 5 screwdrivers.",
+      "expect": { "kind": "statement" }
+    },
+    {
+      "name": "calculate remaining screwdrivers",
+      "input": "How many screwdrivers remain?",
+      "expect": { "kind": "question", "answer": ["25"], "operations": ["subtract"] }
+    }
+  ]
+}
