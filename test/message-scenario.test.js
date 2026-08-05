@@ -10,8 +10,11 @@ const graphSource = fs.readFileSync(
 );
 
 test("message scenarios execute published interpretation against the published local graph runtime", async () => {
+  let graphAttempts = 0;
   const fetchImpl = async (url, options = {}) => {
     if (String(url).endsWith("/workers/graphWorkerLib.js")) {
+      graphAttempts += 1;
+      if (graphAttempts === 1) throw new Error("temporary network failure");
       return new Response(graphSource, { status: 200 });
     }
     const body = JSON.parse(options.body || "{}");
@@ -47,6 +50,7 @@ test("message scenarios execute published interpretation against the published l
   }, { websiteUrl: "https://website.example", fetchImpl });
 
   assert.equal(result.passed, 2);
+  assert.equal(graphAttempts, 2);
   assert.deepEqual(result.results[1].answer, ["20"]);
   assert.ok(result.graph.entities > 0);
 });

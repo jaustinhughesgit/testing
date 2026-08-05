@@ -5,8 +5,26 @@ function endpoint(websiteUrl, pathname) {
   return new URL(pathname, `${String(websiteUrl).replace(/\/+$/, "")}/`).toString();
 }
 
+async function fetchWithRetry(fetchImpl, url, options = {}, attempts = 3) {
+  let lastError = null;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      const response = await fetchImpl(url, options);
+      if (response.ok || (response.status !== 429 && response.status < 500) || attempt === attempts) {
+        return response;
+      }
+      lastError = new Error(`${url} failed with HTTP ${response.status}`);
+    } catch (error) {
+      lastError = error;
+      if (attempt === attempts) break;
+    }
+    await new Promise((resolve) => setTimeout(resolve, attempt * 250));
+  }
+  throw new Error(`${url} transport failed after ${attempts} attempts: ${lastError?.message || "unknown error"}`);
+}
+
 async function jsonRequest(fetchImpl, url, options = {}) {
-  const response = await fetchImpl(url, options);
+  const response = await fetchWithRetry(fetchImpl, url, options);
   const data = await response.json().catch(() => ({}));
   if (!response.ok || data?.ok === false) {
     throw new Error(`${url} failed with HTTP ${response.status}: ${data?.error || data?.detail || "unknown error"}`);
@@ -16,7 +34,7 @@ async function jsonRequest(fetchImpl, url, options = {}) {
 
 async function loadPublishedGraphStore(websiteUrl, fetchImpl) {
   const url = endpoint(websiteUrl, "/workers/graphWorkerLib.js");
-  const response = await fetchImpl(url);
+  const response = await fetchWithRetry(fetchImpl, url);
   if (!response.ok) throw new Error(`${url} failed with HTTP ${response.status}`);
   const source = await response.text();
   const sandbox = { console };
