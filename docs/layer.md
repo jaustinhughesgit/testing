@@ -28,7 +28,7 @@ The local state file contains a test access token and test-only private key mate
 
 Requests use the website's API transport contract: POST to the configured cookies endpoint, set `X-Original-Host` to `/<action>/<path...>`, and replay the issued token through the cookie-compatible `X-accessToken` transport. Responses preserve the raw API envelope and expose the Compute payload for assertions.
 
-Message scenarios use `websiteUrl` to call `/classify-input` and `/essence`, and load `/workers/graphWorkerLib.js` from that same deployment. For statement turns they apply returned mutation operations before ingesting returned fact rows, matching the browser transaction order. The graph implementation remains owned and published by `aws`; `testing` only sequences inputs and asserts visible answers.
+Message scenarios use `websiteUrl` to call `/classify-input` and `/essence`, and load `/workers/graphWorkerLib.js` plus `/workers/quantityLedgerWorkerLib.js` from that same deployment. For statement turns they apply returned mutation operations before ingesting returned fact rows, matching the browser transaction order. A step explicitly marked `local-ledger` skips classification and Essence transport and executes the published browser primitive against the accumulated graph. The graph and ledger implementations remain owned and published by `aws`; `testing` only sequences inputs and asserts visible answers and execution mode.
 
 ## Test placement
 

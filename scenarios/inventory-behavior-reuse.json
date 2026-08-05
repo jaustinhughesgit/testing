@@ -19,7 +19,13 @@
     {
       "name": "reuse behavior for drills",
       "input": "How many drills remain?",
-      "expect": { "kind": "question", "answer": ["8"], "operations": ["subtract"] }
+      "execution": "local-ledger",
+      "expect": {
+        "kind": "question",
+        "execution": "local-ledger",
+        "answer": ["8"],
+        "operations": ["subtract"]
+      }
     }
   ]
 }

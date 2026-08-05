@@ -39,11 +39,27 @@ async function loadPublishedGraphStore(websiteUrl, fetchImpl) {
   const source = await response.text();
   const sandbox = { console };
   sandbox.globalThis = sandbox;
+  sandbox.self = sandbox;
   vm.runInNewContext(source, sandbox, { filename: url });
   if (typeof sandbox.createGraphStoreLite !== "function") {
     throw new Error("The published website graph runtime did not expose createGraphStoreLite");
   }
   return sandbox.createGraphStoreLite();
+}
+
+async function loadPublishedQuantityLedger(websiteUrl, fetchImpl) {
+  const url = endpoint(websiteUrl, "/workers/quantityLedgerWorkerLib.js");
+  const response = await fetchWithRetry(fetchImpl, url);
+  if (!response.ok) throw new Error(`${url} failed with HTTP ${response.status}`);
+  const source = await response.text();
+  const sandbox = { console };
+  sandbox.globalThis = sandbox;
+  sandbox.self = sandbox;
+  vm.runInNewContext(source, sandbox, { filename: url });
+  if (typeof sandbox.oneVarQuantityLedger?.buildRoleGroundedSubtractionPlan !== "function") {
+    throw new Error("The published website did not expose the local quantity-ledger runtime");
+  }
+  return sandbox.oneVarQuantityLedger;
 }
 
 function derivedOperations(rows) {
@@ -64,6 +80,9 @@ function assertStep(step, actual, index) {
   const label = step.name || `step ${index + 1}`;
   if (expected.kind && actual.kind !== expected.kind) {
     throw new Error(`${label}: expected kind ${expected.kind}, received ${actual.kind}`);
+  }
+  if (expected.execution && actual.execution !== expected.execution) {
+    throw new Error(`${label}: expected execution ${expected.execution}, received ${actual.execution}`);
   }
   if (expected.answer && !exactStringArray(actual.answer, expected.answer)) {
     throw new Error(
@@ -89,27 +108,40 @@ export async function runMessageScenarioObject(scenario, { websiteUrl, fetchImpl
   }
 
   const graphStore = await loadPublishedGraphStore(websiteUrl, fetchImpl);
+  const quantityLedger = await loadPublishedQuantityLedger(websiteUrl, fetchImpl);
   const results = [];
   for (const [index, step] of scenario.steps.entries()) {
     const text = String(step.input || "").trim();
     if (!text) throw new Error(`Message scenario step ${index + 1} requires input`);
 
-    const classification = await jsonRequest(fetchImpl, endpoint(websiteUrl, "/classify-input"), {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ text, llmTemplateId: step.llmTemplateId || null }),
-    });
-    const interpretation = await jsonRequest(fetchImpl, endpoint(websiteUrl, "/essence"), {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        text,
-        inputKind: classification.kind,
-        classification,
-        llmTemplateId: step.llmTemplateId || null,
-        contextDB: { graph: graphStore.getSnapshot() },
-      }),
-    });
+    const localLedgerExecution = step.execution === "local-ledger";
+    const classification = localLedgerExecution
+      ? { ok: true, kind: "question", source: "published-local-ledger" }
+      : await jsonRequest(fetchImpl, endpoint(websiteUrl, "/classify-input"), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ text, llmTemplateId: step.llmTemplateId || null }),
+      });
+    const interpretation = localLedgerExecution
+      ? {
+        essence: quantityLedger.buildRoleGroundedSubtractionPlan(
+          { graph: graphStore.getSnapshot() },
+          text,
+        ) || [],
+        overlayOps: [],
+        mutationOps: [],
+      }
+      : await jsonRequest(fetchImpl, endpoint(websiteUrl, "/essence"), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          text,
+          inputKind: classification.kind,
+          classification,
+          llmTemplateId: step.llmTemplateId || null,
+          contextDB: { graph: graphStore.getSnapshot() },
+        }),
+      });
 
     const rows = Array.isArray(interpretation.essence) ? interpretation.essence : [];
     let answer = [];
@@ -125,6 +157,7 @@ export async function runMessageScenarioObject(scenario, { websiteUrl, fetchImpl
       name: step.name || `step ${index + 1}`,
       input: text,
       kind: classification.kind,
+      execution: localLedgerExecution ? "local-ledger" : "remote-interpretation",
       answer,
       operations: derivedOperations(rows),
       mutations: Array.isArray(interpretation.mutationOps)
