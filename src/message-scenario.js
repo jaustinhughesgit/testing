@@ -48,7 +48,10 @@ function assertStep(step, actual, index) {
     throw new Error(`${label}: expected kind ${expected.kind}, received ${actual.kind}`);
   }
   if (expected.answer && !exactStringArray(actual.answer, expected.answer)) {
-    throw new Error(`${label}: expected answer ${JSON.stringify(expected.answer)}, received ${JSON.stringify(actual.answer)}`);
+    throw new Error(
+      `${label}: expected answer ${JSON.stringify(expected.answer)}, received ${JSON.stringify(actual.answer)}; `
+      + `essence ${JSON.stringify(actual.essence)}`
+    );
   }
   if (expected.operations) {
     const missing = expected.operations.filter((operation) => !actual.operations.includes(operation));
