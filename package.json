@@ -1,0 +1,17 @@
+{
+  "name": "@1var/testing",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Headless acceptance client for 1var API and Compute capabilities",
+  "bin": {
+    "onevar-test": "./src/cli.js"
+  },
+  "scripts": {
+    "test": "node --test",
+    "check": "node --check src/cli.js && node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "name": "Authenticated API transport smoke test",
+  "steps": [
+    {
+      "name": "Read email verification state",
+      "action": "checkEmailVerified",
+      "body": {},
+      "expect": {}
+    }
+  ]
+}

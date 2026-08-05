@@ -1,0 +1,17 @@
+{
+  "environment": "local",
+  "apiUrl": "http://localhost:3001/cookies",
+  "originalHost": "http://localhost:3000",
+  "stateDirectory": ".state",
+  "mail": {
+    "mode": "mailbox",
+    "mailboxUrl": "http://localhost:8025/api/v1/messages?recipient={recipient}",
+    "timeoutMs": 30000,
+    "pollIntervalMs": 500
+  },
+  "destructive": {
+    "allowDatabaseReset": true,
+    "allowedResetHosts": ["localhost"],
+    "testEnvironmentId": "local"
+  }
+}

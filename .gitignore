@@ -1,0 +1,5 @@
+testing.config.json
+.state/
+coverage/
+node_modules/
+*.log
