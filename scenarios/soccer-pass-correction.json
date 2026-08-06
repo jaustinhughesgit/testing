@@ -1,0 +1,17 @@
+{
+  "name": "soccer pass correction",
+  "steps": [
+    {
+      "input": "Amy passed to Sarah.",
+      "expect": { "kind": "statement" }
+    },
+    {
+      "input": "Correction—the receiver was Mia.",
+      "expect": { "kind": "statement", "mutations": ["relation:delete"] }
+    },
+    {
+      "input": "Who did Amy pass to?",
+      "expect": { "kind": "question", "answer": ["mia"] }
+    }
+  ]
+}

@@ -64,7 +64,7 @@ async function loadPublishedQuantityLedger(websiteUrl, fetchImpl) {
 
 function derivedOperations(rows) {
   return (Array.isArray(rows) ? rows : [])
-    .map((row) => String(row?.[2] || "").match(/^\{op:(add|subtract|multiply|divide)\}$/i)?.[1]?.toLowerCase())
+    .map((row) => String(row?.[2] || "").match(/^\{op:(add|subtract|multiply|divide|count)\}$/i)?.[1]?.toLowerCase())
     .filter(Boolean);
 }
 

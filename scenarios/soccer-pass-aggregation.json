@@ -1,0 +1,17 @@
+{
+  "name": "soccer pass aggregation",
+  "steps": [
+    {
+      "input": "Amy had a good pass to Sarah.",
+      "expect": { "kind": "statement" }
+    },
+    {
+      "input": "Amy had another good pass to Mia.",
+      "expect": { "kind": "statement" }
+    },
+    {
+      "input": "How many effective passes did Amy have?",
+      "expect": { "kind": "question", "answer": ["2"], "operations": ["count"] }
+    }
+  ]
+}

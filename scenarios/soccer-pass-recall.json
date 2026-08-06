@@ -1,0 +1,13 @@
+{
+  "name": "soccer pass recall",
+  "steps": [
+    {
+      "input": "Amy had a good pass to Sarah.",
+      "expect": { "kind": "statement" }
+    },
+    {
+      "input": "Who received Amy’s good pass?",
+      "expect": { "kind": "question", "answer": ["sarah"] }
+    }
+  ]
+}
