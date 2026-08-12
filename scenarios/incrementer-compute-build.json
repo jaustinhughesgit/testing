@@ -1,0 +1,90 @@
+{
+  "arrayLogic": [
+    {
+      "computeEntity": {
+        "blueprintId": "entity.declarative.remote.v1",
+        "capabilityId": "math.increment.number",
+        "name": "Number incrementer",
+        "description": "Adds one to a supplied number.",
+        "provider": "local declarative arithmetic",
+        "approved": true,
+        "buildRequest": {
+          "schemaVersion": 1,
+          "kind": "computeCapabilityBuild",
+          "capabilityIdHint": "math.increment.number",
+          "name": "Number incrementer",
+          "description": "Adds one to a supplied number.",
+          "operations": [
+            {
+              "operationId": "increment",
+              "description": "Adds one to a number.",
+              "inputs": [
+                {
+                  "name": "number",
+                  "type": "number",
+                  "required": true,
+                  "bindingHint": { "source": "utterance", "resolver": "number" },
+                  "clarification": "Which number should I increment?"
+                }
+              ],
+              "outputs": [{ "name": "result", "type": "number", "required": true }],
+              "utteranceExamples": [{ "text": "Increment 4.", "inputs": { "number": 4 } }],
+              "answerTemplate": "{{number}} plus one is {{result}}."
+            }
+          ]
+        },
+        "manifest": {
+          "schemaVersion": 1,
+          "capabilityId": "math.increment.number",
+          "entityId": "pending-capability-entity",
+          "version": 1,
+          "status": "active",
+          "description": "Adds one to a supplied number.",
+          "ownerId": "u:1",
+          "execution": { "type": "remote", "readOnly": true, "timeoutMs": 15000 },
+          "operations": [
+            {
+              "operationId": "increment",
+              "description": "Adds one to a number.",
+              "inputs": [
+                {
+                  "name": "number",
+                  "type": "number",
+                  "required": true,
+                  "bindingHint": { "source": "utterance", "resolver": "number" },
+                  "clarification": "Which number should I increment?"
+                }
+              ],
+              "outputs": [{ "name": "result", "type": "number", "required": true }],
+              "protectedAssetRequirements": [],
+              "utteranceExamples": [{ "text": "Increment 4.", "inputs": { "number": 4 } }],
+              "answerTemplate": "{{number}} plus one is {{result}}."
+            }
+          ],
+          "implementationPolicyVersion": 11,
+          "name": "Number incrementer"
+        },
+        "published": {
+          "modules": {},
+          "actions": [
+            {
+              "target": "{|math|}",
+              "chain": [{ "access": "add", "params": ["{|req=>body.number|}", 1] }],
+              "assign": "{|result|}"
+            },
+            {
+              "target": "{|res|}!",
+              "chain": [{ "access": "send", "params": [{ "result": "{|result|}" }] }]
+            }
+          ],
+          "data": {
+            "protectedAssetRequirements": [],
+            "computeBlueprintId": "entity.declarative.remote.v1",
+            "capabilityId": "math.increment.number",
+            "allowedHosts": []
+          }
+        }
+      }
+    }
+  ]
+}

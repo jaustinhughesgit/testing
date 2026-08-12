@@ -32,6 +32,16 @@ node src/cli.js email verify --email coach@example.test
 # Create test-only P-256 device keys and register their public keys.
 node src/cli.js encryption setup --email coach@example.test --entity 1v4r-example
 
+# Encrypt text locally, store only its recipient-wrapped envelope, and reveal it locally.
+node src/cli.js protected-asset create-text --text 'private value' --label 'Acceptance secret'
+node src/cli.js protected-asset reveal-text
+
+# Encrypt a provider credential with separate device and secure-executor wraps.
+node src/cli.js protected-asset create-credential \
+  --value 'test-secret' --field api_key \
+  --provider-id provider.example --provider-host api.provider.example \
+  --capability-id example.lookup
+
 # Run a reusable JSON acceptance scenario.
 node src/cli.js scenario run scenarios/smoke.example.json
 
@@ -45,6 +55,10 @@ node src/cli.js db reset --confirm reset:local
 ```
 
 Every command accepts `--config <path>` and `--profile <name>`. `api call` accepts `--body '<json>'`, `--body @path/to/body.json`, and repeated path segments after the action.
+
+Provider credentials let Compute inject only the declared field into the
+declared provider. Ordinary server routes still receive only ciphertext and
+metadata; recipient reveal remains controlled by the local device key.
 
 ## Development loop
 

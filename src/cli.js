@@ -1,4 +1,8 @@
 #!/usr/bin/env node
+/**
+ * Platform: Gives agents and CI deterministic commands for cross-layer 1var acceptance, not alternate product semantics.
+ * Technical: Parses subcommands/JSON flags and coordinates config, test-device state, API calls, mailbox checks, and scenarios.
+ */
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -6,6 +10,7 @@ import { loadConfig, requireConnectionConfig, requireWebsiteConfig, assertResetA
 import { StateStore } from "./state-store.js";
 import { OneVarApiClient } from "./api-client.js";
 import { createTestDeviceKeys } from "./device-keys.js";
+import { createProtectedCredential, createProtectedText, revealProtectedText } from "./protected-assets.js";
 import { parseVerificationUrl, waitForVerificationUrl } from "./mailbox.js";
 import { runScenario } from "./scenario.js";
 import { runMessageScenario } from "./message-scenario.js";
@@ -36,6 +41,39 @@ function requireFlag(flags, name) {
 }
 
 function output(value) { process.stdout.write(`${JSON.stringify(value, null, 2)}\n`); }
+
+const retryableResetStatus = new Set([429, 502, 503, 504]);
+
+export async function resetDatabase(client, environmentId, { retries = 4, wait = setTimeout } = {}) {
+  let result;
+  let body = { testEnvironmentId: environmentId, mode: "canonical" };
+  do {
+    let attempt = 0;
+    while (true) {
+      try {
+        result = (await client.call("resetDB", { body })).data;
+        break;
+      } catch (error) {
+        if (!retryableResetStatus.has(error.status) || attempt >= retries) throw error;
+        await new Promise((resolve) => wait(resolve, 250 * (2 ** attempt++)));
+      }
+    }
+    const pending = result?.response;
+    if (pending?.alert === "pending") {
+      if (!pending.jobId || !pending.continuationToken || !Number.isInteger(pending.step)) {
+        throw new Error("Database reset returned an invalid continuation");
+      }
+      body = {
+        testEnvironmentId: environmentId,
+        mode: "canonical",
+        jobId: pending.jobId,
+        continuationToken: pending.continuationToken,
+        step: pending.step,
+      };
+    }
+  } while (result?.response?.alert === "pending");
+  return result;
+}
 
 export async function main(argv = process.argv.slice(2)) {
   const { positional, flags } = parseArgs(argv);
@@ -108,13 +146,36 @@ export async function main(argv = process.argv.slice(2)) {
     output(result.data);
     return;
   }
+  if (area === "protected-asset" && command === "create-text") {
+    const text = requireFlag(flags, "text");
+    output(await createProtectedText(client, state, { text, label: String(flags.label || "Protected text") }));
+    return;
+  }
+  if (area === "protected-asset" && command === "create-credential") {
+    output(await createProtectedCredential(client, state, {
+      value: requireFlag(flags, "value"),
+      label: String(flags.label || "Provider credential"),
+      field: requireFlag(flags, "field"),
+      providerId: requireFlag(flags, "provider-id"),
+      providerHost: requireFlag(flags, "provider-host"),
+      capabilityId: requireFlag(flags, "capability-id"),
+      approvalMode: String(flags["approval-mode"] || "every_use"),
+    }));
+    return;
+  }
+  if (area === "protected-asset" && command === "reveal-text") {
+    const reference = String(flags.reference || state.load().lastProtectedAssetReference || "");
+    if (!reference) throw new Error("--reference is required when the profile has no last protected asset");
+    output({ ok: true, reference, ...(await revealProtectedText(client, state, reference)) });
+    return;
+  }
   if (area === "scenario" && command === "run") {
     output(await runScenario(path.resolve(process.cwd(), rest[0]), client));
     return;
   }
   if (area === "db" && command === "reset") {
     const { environmentId } = assertResetAllowed(config, String(flags.confirm || ""));
-    const result = (await client.call("resetDB", { body: { testEnvironmentId: environmentId } })).data;
+    const result = await resetDatabase(client, environmentId);
     if (result?.ok === false || result?.response?.alert !== "success") {
       const error = new Error(`Database reset was rejected or incomplete${result?.error?.code ? `: ${result.error.code}` : ""}`);
       error.response = result;

@@ -1,3 +1,7 @@
+/**
+ * Platform: Exercises the same public API/Compute boundary as the website without privileged test-only transport.
+ * Technical: Fetch client for original-host actions, cookie-compatible access tokens, JSON envelopes, and persisted session updates.
+ */
 function accessTokenFrom(headers) {
   const values = typeof headers.getSetCookie === "function"
     ? headers.getSetCookie()
@@ -22,8 +26,9 @@ export class OneVarApiClient {
   }
 
   async call(action, { path = [], body = {} } = {}) {
-    if (!action || !/^[a-zA-Z0-9_-]+$/.test(action)) throw new Error("A valid action is required");
-    const suffix = [action, ...path.map(String)].map(encodeURIComponent).join("/");
+    if (!action || !/^[a-zA-Z0-9_-]+(?::[a-zA-Z0-9_-]+)?$/.test(action)) throw new Error("A valid action is required");
+    const encodedAction = action.split(":").map(encodeURIComponent).join(":");
+    const suffix = [encodedAction, ...path.map((value) => encodeURIComponent(String(value)))].join("/");
     const state = this.stateStore.load();
     const headers = {
       "Content-Type": "application/json",
@@ -47,6 +52,7 @@ export class OneVarApiClient {
     if (accessToken) this.stateStore.update({ accessToken });
     if (!response.ok) {
       const error = new Error(`API request failed with HTTP ${response.status}`);
+      error.status = response.status;
       error.response = raw;
       throw error;
     }

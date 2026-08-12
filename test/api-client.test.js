@@ -25,3 +25,18 @@ test("uses the browser transport contract and persists its session", async () =>
   assert.equal(saved.accessToken, "test-token");
   await client.call("example", { path: ["entity"] });
 });
+
+test("preserves registered colon actions in the original-host route", async () => {
+  let originalHost;
+  const client = new OneVarApiClient({
+    apiUrl: "https://api.example.test/cookies",
+    originalHost: "https://site.example.test",
+    stateStore: { load: () => ({}), update: () => {} },
+    fetchImpl: async (_url, options) => {
+      originalHost = options.headers["X-Original-Host"];
+      return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    },
+  });
+  await client.call("protectedAsset:create");
+  assert.equal(originalHost, "https://site.example.test/protectedAsset:create");
+});
