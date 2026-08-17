@@ -1,0 +1,35 @@
+{
+  "name": "named cross-user Context refresh",
+  "actors": ["owner", "reader"],
+  "steps": [
+    {
+      "type": "statement",
+      "actor": "owner",
+      "name": "publish a unique owner name",
+      "input": "My name is Ardenzo.",
+      "equationId": "self_property_composed_statement"
+    },
+    {
+      "type": "hydrate",
+      "actor": "reader",
+      "name": "reader first resolves the owner",
+      "labels": ["Ardenzo"]
+    },
+    {
+      "type": "statement",
+      "actor": "owner",
+      "name": "publish the owner's cat quantity after first hydration",
+      "input": "I have three cats.",
+      "equationId": "quantity_observation_composed_statement"
+    },
+    {
+      "type": "question",
+      "actor": "reader",
+      "name": "reader refreshes the owner and answers locally",
+      "input": "How many cats does Ardenzo have?",
+      "equationId": "quantity_current_composed_query",
+      "refreshLabels": ["Ardenzo"],
+      "expect": { "answer": ["3"] }
+    }
+  ]
+}

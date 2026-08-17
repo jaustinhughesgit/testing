@@ -56,6 +56,12 @@ ONEVAR_TEST_WEBSITE_URL=https://1var.com \
   node src/cli.js compute run scenarios/register-status-compute.json \
   --profile context-status
 
+# Prove that a second account refreshes an already-known named user's later
+# public fact and answers through the deployed local Path.
+ONEVAR_TEST_WEBSITE_URL=https://1var.com \
+  node src/cli.js context run scenarios/cross-user-context-refresh.json \
+  --profiles context-owner,context-reader
+
 # Reset only an explicitly enabled, server-authorized test environment.
 node src/cli.js db reset --confirm reset:local
 ```

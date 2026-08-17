@@ -15,6 +15,7 @@ import { parseVerificationUrl, waitForVerificationUrl } from "./mailbox.js";
 import { runScenario } from "./scenario.js";
 import { runMessageScenario } from "./message-scenario.js";
 import { runComputeScenario } from "./compute-scenario.js";
+import { runCrossUserContextScenario } from "./cross-user-context-scenario.js";
 
 function parseArgs(argv) {
   const positional = [];
@@ -89,6 +90,15 @@ export async function main(argv = process.argv.slice(2)) {
   }
 
   requireConnectionConfig(config);
+  if (area === "context" && command === "run") {
+    requireWebsiteConfig(config);
+    if (!rest[0]) throw new Error("context run requires a scenario file");
+    output(await runCrossUserContextScenario(path.resolve(process.cwd(), rest[0]), {
+      config,
+      profileNames: requireFlag(flags, "profiles"),
+    }));
+    return;
+  }
   const state = new StateStore(config.stateDirectory, String(flags.profile || "default"));
   const client = new OneVarApiClient({ ...config, stateStore: state });
 

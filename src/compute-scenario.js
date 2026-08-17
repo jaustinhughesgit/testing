@@ -176,6 +176,7 @@ export async function loadPublishedSemanticPathRuntime(websiteUrl, fetchImpl) {
   const urls = [
     "https://public.1var.com/compromise.js",
     "https://public.1var.com/compromise-numbers.js",
+    new URL("/workers/pathBindingWorkerLib.js", base).toString(),
     new URL("/workers/semanticEntityCompilerWorkerLib.js", base).toString(),
     new URL("/workers/patternWorkerLib.js", base).toString(),
   ];
@@ -223,23 +224,46 @@ export async function loadPublishedSemanticPathRuntime(websiteUrl, fetchImpl) {
         : Object.keys(term?.tags || {}).filter((tag) => term.tags[tag]),
     }));
   };
-  const bindingValue = (binding, tokens) => {
+  const bindingValue = (binding, tokens, graphStore) => {
     if (binding.source === "currentSpeaker") return "speaker";
     if (binding.source === "literal") return binding.literal;
     if (binding.source !== "token") throw new Error(`Command Path binding source ${binding.source} is unsupported`);
     const start = Math.max(1, Number(binding.token || 1));
     const end = Math.max(start, Number(binding.tokenEnd || start));
     const selected = tokens.slice(start - 1, end);
+    if (binding.value === "number") {
+      const raw = selected.map((token) => String(token.normal || token.text || token.lemma || ""))
+        .filter(Boolean).join(" ");
+      return sandbox.oneVarPathBindingWorkerLib?.parseNumberValue?.(raw) ?? raw;
+    }
     const field = binding.value === "text" ? "text" : binding.value === "normal" ? "normal" : "lemma";
-    return selected.map((token) => String(token[field] || "").toLowerCase()).filter(Boolean).join(" ");
+    const value = selected.map((token) => String(token[field] || "").toLowerCase()).filter(Boolean).join(" ");
+    if (binding.value === "resolvedEntity") {
+      const graph = graphStore.getSnapshot();
+      const candidates = (graph.mentions?.[value]?.entities || []).filter((entityId) => graph.entities?.[entityId]);
+      const exactNames = candidates.filter((entityId) => (
+        graph.entities[entityId].names || []
+      ).some((name) => String(name).toLowerCase() === value));
+      const resolved = exactNames.length === 1 ? exactNames[0] : (candidates.length === 1 ? candidates[0] : "");
+      if (resolved) return resolved;
+    }
+    return value;
   };
-  const resolveCell = (cell, bindings) => {
+  const resolveCell = (cell, bindings, graphStore) => {
     if (!cell || typeof cell !== "object" || Array.isArray(cell)) return cell;
     if (cell.ref === "binding") return bindings[cell.name];
     if (cell.ref === "instanceBinding") {
       const baseName = String(bindings[cell.name] || cell.name || "entity")
         .toLowerCase().replace(/[^a-z0-9_]+/g, "_");
       return `@instance:${baseName}:${instanceCounter}`;
+    }
+    if (cell.ref === "boundVar") {
+      const variableName = String(cell.name || "").replace(/^\{|\}$/g, "").trim();
+      const value = bindings[cell.base];
+      const entityId = String(value || "").trim();
+      return graphStore.getSnapshot().entities?.[entityId]
+        ? { var: variableName, entityId, lemma: "" }
+        : { var: variableName, entityId: "", lemma: String(value || "").trim().toLowerCase() };
     }
     throw new Error(`Command Path row reference ${cell.ref || "unknown"} is unsupported`);
   };
@@ -262,18 +286,25 @@ export async function loadPublishedSemanticPathRuntime(websiteUrl, fetchImpl) {
       for (const binding of match.bindings || []) specs.set(binding.name, { ...specs.get(binding.name), ...binding });
       const bindings = Object.fromEntries([...specs].map(([name, binding]) => [
         name,
-        bindingValue(binding, tokens),
+        bindingValue(binding, tokens, graphStore),
       ]));
       const rows = (path.right?.state?.rows || []).map((row) =>
-        row.map((cell) => resolveCell(cell, bindings))
+        row.map((cell) => resolveCell(cell, bindings, graphStore))
       );
-      graphStore.ingestEssenceRows(rows);
+      const mode = path.right?.state?.mode || "statement";
+      let answer = [];
+      if (mode === "question") {
+        const query = graphStore.queryByEssenceTemplates(rows);
+        answer = Array.from(query?.vars?.ask || []);
+      } else {
+        graphStore.ingestEssenceRows(rows);
+      }
       return {
         name: equationId,
         input: text,
-        kind: path.right?.state?.mode || "statement",
+        kind: mode,
         execution: "published-semantic-path",
-        answer: [],
+        answer,
         operations: [],
         mutations: [],
         essence: rows,
