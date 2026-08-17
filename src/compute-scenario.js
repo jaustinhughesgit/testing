@@ -1,0 +1,385 @@
+/**
+ * Platform: Proves the public Convert-to-Compute lifecycle against browser-local ContextDB state from a command prompt.
+ * Technical: Polls public Convert jobs, loads published graph/compute runtimes, resolves manifest bindings locally, and invokes the created entity through the normal API route.
+ */
+import fs from "node:fs";
+import vm from "node:vm";
+import { executeMessageStep, loadPublishedGraphStore } from "./message-scenario.js";
+
+const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+
+function unwrap(value) {
+  let current = value;
+  for (let index = 0; index < 12; index += 1) {
+    if (!current || typeof current !== "object" || Array.isArray(current)) break;
+    if (current.build || current.capabilityManifest || current.computeDiscovery) return current;
+    if (current.oai?.html && typeof current.oai.html === "object") current = current.oai.html;
+    else if (current.response && typeof current.response === "object") current = current.response;
+    else if (current.html && typeof current.html === "object") current = current.html;
+    else break;
+  }
+  return current;
+}
+
+function findManifest(value, seen = new Set()) {
+  if (!value || typeof value !== "object" || seen.has(value)) return null;
+  seen.add(value);
+  if (
+    Number(value.schemaVersion) === 1
+    && value.capabilityId
+    && value.entityId
+    && Array.isArray(value.operations)
+  ) return value;
+  for (const child of Array.isArray(value) ? value : Object.values(value)) {
+    const found = findManifest(child, seen);
+    if (found) return found;
+  }
+  return null;
+}
+
+function requirementEnvelope(segments) {
+  const normalized = segments.map((segment, index) => {
+    const text = String(segment || "").replace(/\s+/g, " ").trim();
+    if (!text) throw new Error(`Convert segment ${index + 1} is empty`);
+    return index < segments.length - 1 && !/[.!?]["']?$/.test(text) ? `${text}.` : text;
+  });
+  return {
+    schemaVersion: 1,
+    kind: "convertRequirements",
+    userRequest: normalized.join("\n"),
+    requirementSegments: normalized,
+    relevantItems: [],
+  };
+}
+
+async function callConvert(client, workspaceId, body) {
+  return unwrap((await client.call("convert", { path: [workspaceId], body })).data);
+}
+
+async function buildCapability(client, workspaceId, build, progress = () => {}) {
+  const prompt = requirementEnvelope(build.requirementSegments || []);
+  let discoveryJobId = null;
+  let capabilityRequest = null;
+  let blueprintId = "entity.declarative.remote.v1";
+  for (let poll = 0; poll < 90; poll += 1) {
+    const result = await callConvert(client, workspaceId, {
+      llmTemplateId: build.llmTemplateId || "original-v1",
+      prompt,
+      computeDiscovery: true,
+      discoveryOnly: true,
+      backgroundComputeDiscovery: true,
+      computeDiscoveryJobId: discoveryJobId,
+    });
+    const status = String(result?.build?.status || "");
+    progress({ phase: "discovery", status, poll: poll + 1 });
+    if (status === "DISCOVERY_PENDING") {
+      discoveryJobId = String(result?.build?.backgroundJob?.jobId || discoveryJobId || "");
+      if (!discoveryJobId) throw new Error("Convert discovery omitted its job id");
+      await wait(Math.max(250, Number(result?.build?.backgroundJob?.retryAfterMs || 2_000)));
+      continue;
+    }
+    if (status !== "CAPABILITY_BUILD_REQUIRED") {
+      const manifest = findManifest(result);
+      if (manifest) return { result, manifest, prompt };
+      throw new Error(`Convert discovery stopped with ${status || "an unknown status"}`);
+    }
+    capabilityRequest = result?.build?.capabilityRequest;
+    blueprintId = String(result?.computeDiscovery?.buildCommand?.blueprintId || blueprintId);
+    break;
+  }
+  if (!capabilityRequest) throw new Error("Convert discovery did not return a capability contract");
+
+  const expectedBinding = build.expectBinding || null;
+  if (expectedBinding) {
+    const inputs = capabilityRequest.operations?.flatMap((operation) => operation.inputs || []) || [];
+    const matched = inputs.some((input) =>
+      input.name === expectedBinding.name
+      && input.bindingHint?.source === expectedBinding.source
+      && input.bindingHint?.subject === expectedBinding.subject
+      && input.bindingHint?.property === expectedBinding.property
+    );
+    if (!matched) throw new Error(`Convert contract did not preserve expected binding ${JSON.stringify(expectedBinding)}`);
+  }
+
+  let buildId = null;
+  let computeBuildJobId = null;
+  let buildContinuation = null;
+  for (let poll = 0; poll < 120; poll += 1) {
+    const result = await callConvert(client, workspaceId, {
+      llmTemplateId: build.llmTemplateId || "original-v1",
+      prompt,
+      capabilityRequest,
+      buildComputeCapability: true,
+      backgroundComputeBuild: true,
+      computeBuildJobId,
+      blueprintId,
+      buildId,
+      buildContinuation,
+    });
+    const status = String(result?.build?.status || "");
+    progress({ phase: "build", status, poll: poll + 1 });
+    if (status === "BUILD_PENDING") {
+      buildId = String(result?.build?.buildId || buildId || "");
+      computeBuildJobId = String(result?.build?.backgroundJob?.jobId || computeBuildJobId || "");
+      if (!buildId || !computeBuildJobId) throw new Error("Convert build omitted continuation identity");
+      await wait(Math.max(250, Number(result?.build?.backgroundJob?.retryAfterMs || 2_000)));
+      continue;
+    }
+    if (status === "BUILD_RETRY_REQUIRED") {
+      buildId = String(result?.build?.buildId || buildId || "");
+      buildContinuation = result?.build?.continuation;
+      computeBuildJobId = null;
+      if (!buildId || !buildContinuation) throw new Error("Convert build retry omitted continuation state");
+      continue;
+    }
+    const manifest = findManifest(result);
+    if (!manifest) throw new Error(`Convert build stopped with ${status || "an unknown status"}`);
+    return { result, manifest, prompt, capabilityRequest };
+  }
+  throw new Error("Convert build exceeded its bounded polling window");
+}
+
+async function loadComputeRuntime(websiteUrl, fetchImpl) {
+  const url = new URL("/workers/computeCapabilityWorkerLib.js", `${websiteUrl.replace(/\/+$/, "")}/`).toString();
+  const response = await fetchImpl(url);
+  if (!response.ok) throw new Error(`${url} failed with HTTP ${response.status}`);
+  const sandbox = { console };
+  sandbox.globalThis = sandbox;
+  sandbox.self = sandbox;
+  vm.runInNewContext(await response.text(), sandbox, { filename: url });
+  if (typeof sandbox.createComputeCapabilityRuntime !== "function") {
+    throw new Error("Published website did not expose createComputeCapabilityRuntime");
+  }
+  return sandbox.createComputeCapabilityRuntime();
+}
+
+export async function loadPublishedSemanticPathRuntime(websiteUrl, fetchImpl) {
+  const base = `${websiteUrl.replace(/\/+$/, "")}/`;
+  const urls = [
+    "https://public.1var.com/compromise.js",
+    "https://public.1var.com/compromise-numbers.js",
+    new URL("/workers/semanticEntityCompilerWorkerLib.js", base).toString(),
+    new URL("/workers/patternWorkerLib.js", base).toString(),
+  ];
+  const responses = await Promise.all(urls.map((url) => fetchImpl(url)));
+  responses.forEach((response, index) => {
+    if (!response.ok) throw new Error(`${urls[index]} failed with HTTP ${response.status}`);
+  });
+  const sources = await Promise.all(responses.map((response) => response.text()));
+  const datasetUrl = new URL("/modules/_pathbuilder/semantic-graph-path-dataset.json", base).toString();
+  const datasetResponse = await fetchImpl(datasetUrl);
+  if (!datasetResponse.ok) throw new Error(`${datasetUrl} failed with HTTP ${datasetResponse.status}`);
+  const dataset = await datasetResponse.json();
+  const sandbox = { console, structuredClone };
+  sandbox.globalThis = sandbox;
+  sandbox.self = sandbox;
+  sources.forEach((source, index) => vm.runInNewContext(source, sandbox, { filename: urls[index] }));
+  if (sandbox.compromiseNumbers && typeof sandbox.nlp?.extend === "function") {
+    sandbox.nlp.extend(sandbox.compromiseNumbers);
+  }
+  if (
+    typeof sandbox.nlp !== "function"
+    || typeof sandbox.createPatternRuntimeV3 !== "function"
+    || typeof sandbox.oneVarSemanticEntityCompiler?.compileEquation !== "function"
+  ) throw new Error("Published semantic Path runtime is incomplete");
+  const patternRuntime = sandbox.createPatternRuntimeV3();
+  const installed = patternRuntime.installSubpatterns(dataset.capabilityFramework?.subpatterns || [], { replace: true });
+  if (!installed.ok) throw new Error(`Published subpatterns failed validation: ${installed.errors?.join("; ")}`);
+  let instanceCounter = 0;
+
+  const tokensFor = (text) => {
+    const doc = sandbox.nlp(String(text || "")).compute("tagger").compute("root");
+    const directTerms = doc.terms().json();
+    const hasTags = directTerms.some((term) =>
+      Array.isArray(term?.tags) ? term.tags.length : Object.keys(term?.tags || {}).length
+    );
+    const terms = hasTags
+      ? directTerms
+      : (doc.json() || []).flatMap((sentence) => sentence?.terms || []);
+    return terms.map((term) => ({
+      text: term?.text ?? "",
+      normal: term?.normal ?? "",
+      lemma: String(term?.root || term?.normal || "").toLowerCase(),
+      tags: Array.isArray(term?.tags)
+        ? term.tags.map(String)
+        : Object.keys(term?.tags || {}).filter((tag) => term.tags[tag]),
+    }));
+  };
+  const bindingValue = (binding, tokens) => {
+    if (binding.source === "currentSpeaker") return "speaker";
+    if (binding.source === "literal") return binding.literal;
+    if (binding.source !== "token") throw new Error(`Command Path binding source ${binding.source} is unsupported`);
+    const start = Math.max(1, Number(binding.token || 1));
+    const end = Math.max(start, Number(binding.tokenEnd || start));
+    const selected = tokens.slice(start - 1, end);
+    const field = binding.value === "text" ? "text" : binding.value === "normal" ? "normal" : "lemma";
+    return selected.map((token) => String(token[field] || "").toLowerCase()).filter(Boolean).join(" ");
+  };
+  const resolveCell = (cell, bindings) => {
+    if (!cell || typeof cell !== "object" || Array.isArray(cell)) return cell;
+    if (cell.ref === "binding") return bindings[cell.name];
+    if (cell.ref === "instanceBinding") {
+      const baseName = String(bindings[cell.name] || cell.name || "entity")
+        .toLowerCase().replace(/[^a-z0-9_]+/g, "_");
+      return `@instance:${baseName}:${instanceCounter}`;
+    }
+    throw new Error(`Command Path row reference ${cell.ref || "unknown"} is unsupported`);
+  };
+
+  return {
+    execute(equationId, text, graphStore) {
+      const equation = dataset.equations?.find((entry) => entry.id === equationId);
+      if (!equation) throw new Error(`Published semantic equation ${equationId} was not found`);
+      const path = sandbox.oneVarSemanticEntityCompiler.compileEquation(equation, dataset.entities);
+      const tokens = tokensFor(text);
+      const match = patternRuntime.matchPath(path, tokens, { identifiedKind: path.left?.state?.pattern?.kind });
+      if (!match.matched) {
+        throw new Error(
+          `Published semantic Path ${equationId} did not match: ${match.reason || "unknown"}; `
+          + `tokens ${JSON.stringify(tokens)}; details ${JSON.stringify(match)}`
+        );
+      }
+      instanceCounter += 1;
+      const specs = new Map((path.right?.state?.bindings || []).map((binding) => [binding.name, binding]));
+      for (const binding of match.bindings || []) specs.set(binding.name, { ...specs.get(binding.name), ...binding });
+      const bindings = Object.fromEntries([...specs].map(([name, binding]) => [
+        name,
+        bindingValue(binding, tokens),
+      ]));
+      const rows = (path.right?.state?.rows || []).map((row) =>
+        row.map((cell) => resolveCell(cell, bindings))
+      );
+      graphStore.ingestEssenceRows(rows);
+      return {
+        name: equationId,
+        input: text,
+        kind: path.right?.state?.mode || "statement",
+        execution: "published-semantic-path",
+        answer: [],
+        operations: [],
+        mutations: [],
+        essence: rows,
+        bindings,
+      };
+    },
+  };
+}
+
+function computePath(manifest, operation) {
+  return {
+    left: { state: { pattern: { kind: "question", operation: "invoke_compute_capability", slotDefinitions: [] } } },
+    right: {
+      lib: "computeCapability",
+      state: {
+        schemaVersion: 3,
+        mode: "question",
+        operation: "invoke_compute_capability",
+        compute: {
+          schemaVersion: 1,
+          capabilityId: manifest.capabilityId,
+          entityId: manifest.entityId,
+          version: manifest.version,
+          operationId: operation.operationId,
+          inputs: operation.inputs || [],
+          outputs: operation.outputs || [],
+          protectedAssetRequirements: operation.protectedAssetRequirements || [],
+          answerTemplate: operation.answerTemplate,
+        },
+      },
+    },
+  };
+}
+
+function authenticatedFetch(stateStore, fetchImpl) {
+  return async (url, options = {}) => {
+    const token = stateStore.load().accessToken;
+    const headers = new Headers(options.headers || {});
+    if (token) {
+      headers.set("Cookie", `accessToken=${encodeURIComponent(token)}`);
+      headers.set("X-accessToken", token);
+    }
+    return fetchImpl(url, { ...options, headers });
+  };
+}
+
+export async function runComputeScenarioObject(scenario, {
+  client,
+  stateStore,
+  websiteUrl,
+  fetchImpl = fetch,
+  progress = () => {},
+} = {}) {
+  if (!client || !stateStore || !websiteUrl) throw new Error("client, stateStore, and websiteUrl are required");
+  const workspaceId = String(stateStore.load().subdomain || "");
+  if (!workspaceId) throw new Error("The selected profile has no workspace; run account bootstrap first");
+  const graphStore = await loadPublishedGraphStore(websiteUrl, fetchImpl);
+  const built = await buildCapability(client, workspaceId, scenario.build || {}, progress);
+  const runtime = await loadComputeRuntime(websiteUrl, fetchImpl);
+  const semanticPaths = await loadPublishedSemanticPathRuntime(websiteUrl, fetchImpl);
+  const operationId = String(scenario.build?.operationId || built.manifest.operations?.[0]?.operationId || "");
+  const operation = built.manifest.operations?.find((item) => item.operationId === operationId);
+  if (!operation) throw new Error(`Built manifest omitted operation ${operationId}`);
+  const path = computePath(built.manifest, operation);
+  const transport = authenticatedFetch(stateStore, fetchImpl);
+  const results = [];
+
+  for (const [index, step] of (scenario.steps || []).entries()) {
+    if (step.type === "essence") {
+      const result = step.execution === "published-semantic-path"
+        ? semanticPaths.execute(step.equationId, step.input, graphStore)
+        : await executeMessageStep(step, {
+          websiteUrl,
+          fetchImpl,
+          graphStore,
+          index,
+        });
+      if (step.expect?.kind && result.kind !== step.expect.kind) {
+        throw new Error(`Expected Essence kind ${step.expect.kind}, received ${result.kind}`);
+      }
+      results.push({ type: "essence", ...result });
+      continue;
+    }
+    if (step.type !== "invoke") throw new Error(`Scenario step ${index + 1} has unsupported type ${step.type}`);
+    const execution = await runtime.invokeComputePath(path, {
+      graphSnapshot: graphStore.getSnapshot(),
+      sentence: String(step.input || ""),
+      fetchImpl: transport,
+      requestId: `command-scenario-${index + 1}`,
+    });
+    if (!execution.ok) throw new Error(`Compute invocation failed: ${JSON.stringify(execution.error)}`);
+    if (step.expect?.answer && execution.answer !== step.expect.answer) {
+      throw new Error(
+        `Expected answer ${JSON.stringify(step.expect.answer)}, received ${JSON.stringify(execution.answer)}; `
+        + `plan ${JSON.stringify(execution.computePlan)}; graph ${JSON.stringify(graphStore.getSnapshot())}`
+      );
+    }
+    if (step.expect?.input) {
+      const binding = execution.computePlan?.inputBindings?.find((item) => item.name === step.expect.input.name);
+      if (!binding || String(binding.value) !== String(step.expect.input.value)) {
+        throw new Error(`Expected resolved input ${JSON.stringify(step.expect.input)}, received ${JSON.stringify(binding)}`);
+      }
+    }
+    results.push({
+      type: "invoke",
+      input: step.input,
+      answer: execution.answer,
+      inputBindings: execution.computePlan?.inputBindings || [],
+      entityId: built.manifest.entityId,
+      capabilityId: built.manifest.capabilityId,
+    });
+  }
+
+  return {
+    name: scenario.name || "compute scenario",
+    passed: results.length,
+    buildStatus: built.result?.build?.status || "CAPABILITY_REUSED",
+    capabilityId: built.manifest.capabilityId,
+    entityId: built.manifest.entityId,
+    requirementSegments: built.prompt.requirementSegments,
+    results,
+  };
+}
+
+export async function runComputeScenario(file, options) {
+  return runComputeScenarioObject(JSON.parse(fs.readFileSync(file, "utf8")), options);
+}

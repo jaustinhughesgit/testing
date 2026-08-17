@@ -11,6 +11,7 @@ It owns:
 - account bootstrap, email-verification, and test-device key-registration workflows;
 - reusable acceptance scenarios;
 - ordered message scenarios that call the website's public interpretation routes and execute its published worker-safe graph runtime;
+- ordered Compute scenarios that drive public Convert jobs, execute a named published semantic Path into local ContextDB, resolve manifest bindings, and invoke the created or reused entity;
 - guarded requests to reset an isolated test environment.
 
 It does not own:
@@ -29,6 +30,8 @@ The local state file contains a test access token and test-only private key mate
 Requests use the website's API transport contract: POST to the configured cookies endpoint, set `X-Original-Host` to `/<action>/<path...>`, and replay the issued token through the cookie-compatible `X-accessToken` transport. Responses preserve the raw API envelope and expose the Compute payload for assertions.
 
 Message scenarios use `websiteUrl` to call `/classify-input` and `/essence`, and load `/workers/graphWorkerLib.js` plus `/workers/quantityLedgerWorkerLib.js` from that same deployment. For statement turns they apply returned mutation operations before ingesting returned fact rows, matching the browser transaction order. A step explicitly marked `local-ledger` skips classification and Essence transport and executes the published browser primitive against the accumulated graph. The graph and ledger implementations remain owned and published by `aws`; `testing` only sequences inputs and asserts visible answers and execution mode.
+
+Compute scenarios use the same authenticated profile to poll public Convert discovery and build/reuse states. They load the deployed tokenizer, semantic dataset/compiler, Pattern Schema runtime, graph store, and Compute-capability worker. A `published-semantic-path` step selects a named equation from the deployed catalog, requires the deployed matcher to accept it, and materializes only its declared `binding` and `instanceBinding` row references; unsupported references fail closed. Invocation then resolves the manifest's ContextDB inputs against that local graph and calls the normal `runEntity` route. This proves the cross-layer contract without browser automation, but it does not prove IndexedDB persistence, worker acknowledgement, rendering, or physical input gestures.
 
 ## Test placement
 

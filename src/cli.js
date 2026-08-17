@@ -14,6 +14,7 @@ import { createProtectedCredential, createProtectedText, revealProtectedText } f
 import { parseVerificationUrl, waitForVerificationUrl } from "./mailbox.js";
 import { runScenario } from "./scenario.js";
 import { runMessageScenario } from "./message-scenario.js";
+import { runComputeScenario } from "./compute-scenario.js";
 
 function parseArgs(argv) {
   const positional = [];
@@ -171,6 +172,17 @@ export async function main(argv = process.argv.slice(2)) {
   }
   if (area === "scenario" && command === "run") {
     output(await runScenario(path.resolve(process.cwd(), rest[0]), client));
+    return;
+  }
+  if (area === "compute" && command === "run") {
+    requireWebsiteConfig(config);
+    if (!rest[0]) throw new Error("compute run requires a scenario file");
+    output(await runComputeScenario(path.resolve(process.cwd(), rest[0]), {
+      client,
+      stateStore: state,
+      websiteUrl: config.websiteUrl,
+      progress: ({ phase, status, poll }) => process.stderr.write(`${phase} ${poll}: ${status}\n`),
+    }));
     return;
   }
   if (area === "db" && command === "reset") {

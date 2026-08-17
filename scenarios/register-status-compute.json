@@ -1,0 +1,53 @@
+{
+  "name": "ContextDB-backed register status compute",
+  "build": {
+    "requirementSegments": [
+      "Create a compute entity that produces a register status report",
+      "It has exactly one required string input named status. Its binding source is contextdb, its subject is speaker, and its property is register_status. Preserve the identifiers status, speaker, and register_status exactly. Do not add current to the property name. Do not ask the user for status",
+      "When I ask Give me the register status report, return The current register status is followed by the status"
+    ],
+    "operationId": "generate_register_status_report",
+    "expectBinding": {
+      "name": "status",
+      "source": "contextdb",
+      "subject": "speaker",
+      "property": "register_status"
+    }
+  },
+  "steps": [
+    {
+      "type": "essence",
+      "name": "store open status",
+      "input": "My register status is open.",
+      "execution": "published-semantic-path",
+      "equationId": "self_property_composed_statement",
+      "expect": { "kind": "statement" }
+    },
+    {
+      "type": "invoke",
+      "name": "report open status",
+      "input": "Give me the register status report",
+      "expect": {
+        "answer": "The current register status is open.",
+        "input": { "name": "status", "value": "open" }
+      }
+    },
+    {
+      "type": "essence",
+      "name": "store closed status",
+      "input": "My register status is closed.",
+      "execution": "published-semantic-path",
+      "equationId": "self_property_composed_statement",
+      "expect": { "kind": "statement" }
+    },
+    {
+      "type": "invoke",
+      "name": "report closed status",
+      "input": "Give me the register status report",
+      "expect": {
+        "answer": "The current register status is closed.",
+        "input": { "name": "status", "value": "closed" }
+      }
+    }
+  ]
+}

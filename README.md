@@ -50,6 +50,12 @@ node src/cli.js scenario run scenarios/smoke.example.json
 ONEVAR_TEST_WEBSITE_URL=https://1var.com \
   node src/cli.js message run scenarios/hardware-store-messages.json
 
+# Run Convert discovery/build/reuse, browser-local ContextDB bindings, and the
+# normal Compute entity route as one command-prompt acceptance scenario.
+ONEVAR_TEST_WEBSITE_URL=https://1var.com \
+  node src/cli.js compute run scenarios/register-status-compute.json \
+  --profile context-status
+
 # Reset only an explicitly enabled, server-authorized test environment.
 node src/cli.js db reset --confirm reset:local
 ```
@@ -71,5 +77,7 @@ metadata; recipient reveal remains controlled by the local device key.
 Email verification uses a real test mailbox adapter; it does not turn verification off. Device setup uses Node WebCrypto for a test device. Real WebAuthn enrollment still needs a browser test because user activation and authenticator behavior cannot be proven headlessly by this client.
 
 Message scenarios download the website's published worker-safe graph runtime and call its public classification and Essence routes. This avoids copying interpretation or ContextDB semantics into `testing`; browser persistence, Path lifecycle, rendering, and user activation remain separate browser tests.
+
+Compute scenarios drive the public background Convert lifecycle and load the deployed graph, semantic catalog/compiler, tokenizer, Pattern Schema runtime, and Compute invocation runtime. Steps may execute a named published semantic equation for deterministic local Essence instead of relying on the legacy remote `/essence` model route. The command runner supports only the declarative binding/instance references required by the selected published equation and fails closed on other row references; expanding that executor remains a reusable harness task, not permission to add scenario vocabulary.
 
 Database reset is deliberately double-gated. The CLI rejects production-like targets and demands explicit configuration and confirmation. Compute independently requires `TEST_RESET_ENABLED=true`, an exact `TEST_RESET_ENVIRONMENT_ID`, and the authenticated user's ID in `TEST_RESET_ALLOWED_USER_IDS`.

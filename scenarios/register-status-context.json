@@ -1,0 +1,25 @@
+{
+  "name": "register status ContextDB replacement",
+  "steps": [
+    {
+      "name": "store initial register status",
+      "input": "My register status is open.",
+      "expect": { "kind": "statement" }
+    },
+    {
+      "name": "read initial register status",
+      "input": "What is my register status?",
+      "expect": { "kind": "question", "answer": ["open"] }
+    },
+    {
+      "name": "replace register status",
+      "input": "My register status is closed.",
+      "expect": { "kind": "statement" }
+    },
+    {
+      "name": "read replaced register status",
+      "input": "What is my register status?",
+      "expect": { "kind": "question", "answer": ["closed"] }
+    }
+  ]
+}

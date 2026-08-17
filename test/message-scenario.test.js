@@ -8,10 +8,16 @@ const graphSource = fs.readFileSync(
   path.resolve(import.meta.dirname, "../../aws/app/public/workers/graphWorkerLib.js"),
   "utf8"
 );
-const ledgerSource = fs.readFileSync(
-  path.resolve(import.meta.dirname, "../../aws/app/lib/essenceRemainderPlan.js"),
-  "utf8"
-);
+const ledgerSource = `
+  globalThis.oneVarQuantityLedger = {
+    buildRoleGroundedSubtractionPlan() {
+      return [
+        ["*", "store", "have", "{item}"],
+        ["present", "{item}", "{prop:quantity}", "{ask}"]
+      ];
+    }
+  };
+`;
 
 test("message scenarios execute published interpretation against the published local graph runtime", async () => {
   let graphAttempts = 0;
@@ -65,4 +71,33 @@ test("message scenarios execute published interpretation against the published l
   assert.deepEqual(result.results[1].answer, ["20"]);
   assert.equal(result.results[1].execution, "local-ledger");
   assert.ok(result.graph.entities > 0);
+});
+
+test("ordinary message scenarios do not require the optional local-ledger asset", async () => {
+  const fetched = [];
+  const fetchImpl = async (url, options = {}) => {
+    fetched.push(String(url));
+    if (String(url).endsWith("/workers/graphWorkerLib.js")) {
+      return new Response(graphSource, { status: 200 });
+    }
+    if (String(url).endsWith("/classify-input")) {
+      return Response.json({ ok: true, kind: "statement" });
+    }
+    if (String(url).endsWith("/essence")) {
+      return Response.json({
+        essence: [["present", "speaker", "{prop:register_status}", "open"]],
+        overlayOps: [],
+        mutationOps: [],
+      });
+    }
+    return new Response("missing", { status: 404 });
+  };
+
+  const result = await runMessageScenarioObject({
+    name: "ordinary context statement",
+    steps: [{ input: "My register status is open.", expect: { kind: "statement" } }],
+  }, { websiteUrl: "https://website.example", fetchImpl });
+
+  assert.equal(result.passed, 1);
+  assert.equal(fetched.some((url) => url.endsWith("/workers/quantityLedgerWorkerLib.js")), false);
 });

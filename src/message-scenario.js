@@ -1,3 +1,7 @@
+/**
+ * Platform: Verifies message-to-Essence-to-local-answer behavior using runtime artifacts published by the website.
+ * Technical: Runs ordered JSON turns through public classification/Essence routes and a VM-loaded graph/ledger worker store.
+ */
 import fs from "node:fs";
 import vm from "node:vm";
 
@@ -23,7 +27,7 @@ async function fetchWithRetry(fetchImpl, url, options = {}, attempts = 3) {
   throw new Error(`${url} transport failed after ${attempts} attempts: ${lastError?.message || "unknown error"}`);
 }
 
-async function jsonRequest(fetchImpl, url, options = {}) {
+export async function jsonRequest(fetchImpl, url, options = {}) {
   const response = await fetchWithRetry(fetchImpl, url, options);
   const data = await response.json().catch(() => ({}));
   if (!response.ok || data?.ok === false) {
@@ -32,7 +36,7 @@ async function jsonRequest(fetchImpl, url, options = {}) {
   return data;
 }
 
-async function loadPublishedGraphStore(websiteUrl, fetchImpl) {
+export async function loadPublishedGraphStore(websiteUrl, fetchImpl) {
   const url = endpoint(websiteUrl, "/workers/graphWorkerLib.js");
   const response = await fetchWithRetry(fetchImpl, url);
   if (!response.ok) throw new Error(`${url} failed with HTTP ${response.status}`);
@@ -109,6 +113,72 @@ function assertStep(step, actual, index) {
   }
 }
 
+export async function executeMessageStep(step, {
+  websiteUrl,
+  fetchImpl = fetch,
+  graphStore,
+  quantityLedger = null,
+  index = 0,
+  assert = true,
+} = {}) {
+  const text = String(step.input || "").trim();
+  if (!text) throw new Error(`Message scenario step ${index + 1} requires input`);
+
+  const localLedgerExecution = step.execution === "local-ledger";
+  const classification = localLedgerExecution
+    ? { ok: true, kind: "question", source: "published-local-ledger" }
+    : await jsonRequest(fetchImpl, endpoint(websiteUrl, "/classify-input"), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text, llmTemplateId: step.llmTemplateId || null }),
+    });
+  const interpretation = localLedgerExecution
+    ? {
+      essence: quantityLedger.buildRoleGroundedSubtractionPlan(
+        { graph: graphStore.getSnapshot() },
+        text,
+      ) || [],
+      overlayOps: [],
+      mutationOps: [],
+    }
+    : await jsonRequest(fetchImpl, endpoint(websiteUrl, "/essence"), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        text,
+        inputKind: classification.kind,
+        classification,
+        llmTemplateId: step.llmTemplateId || null,
+        contextDB: { graph: graphStore.getSnapshot() },
+      }),
+    });
+
+  const rows = Array.isArray(interpretation.essence) ? interpretation.essence : [];
+  let answer = [];
+  if (classification.kind === "statement") {
+    graphStore.applyMutationOps(interpretation.mutationOps || []);
+    graphStore.ingestEssenceRows(rows);
+  }
+  if (classification.kind === "question") {
+    const query = graphStore.queryByEssenceTemplates(rows);
+    answer = Array.from(query?.vars?.ask || []);
+  }
+  const result = {
+    name: step.name || `step ${index + 1}`,
+    input: text,
+    kind: classification.kind,
+    execution: localLedgerExecution ? "local-ledger" : "remote-interpretation",
+    answer,
+    operations: derivedOperations(rows),
+    mutations: Array.isArray(interpretation.mutationOps)
+      ? interpretation.mutationOps.map((operation) => operation.type)
+      : [],
+    essence: rows,
+  };
+  if (assert) assertStep(step, result, index);
+  return result;
+}
+
 export async function runMessageScenarioObject(scenario, { websiteUrl, fetchImpl = fetch } = {}) {
   if (!websiteUrl) throw new Error("websiteUrl is required for a message scenario");
   if (!Array.isArray(scenario?.steps) || !scenario.steps.length) {
@@ -116,65 +186,19 @@ export async function runMessageScenarioObject(scenario, { websiteUrl, fetchImpl
   }
 
   const graphStore = await loadPublishedGraphStore(websiteUrl, fetchImpl);
-  const quantityLedger = await loadPublishedQuantityLedger(websiteUrl, fetchImpl);
+  const needsLocalLedger = scenario.steps.some((step) => step?.execution === "local-ledger");
+  const quantityLedger = needsLocalLedger
+    ? await loadPublishedQuantityLedger(websiteUrl, fetchImpl)
+    : null;
   const results = [];
   for (const [index, step] of scenario.steps.entries()) {
-    const text = String(step.input || "").trim();
-    if (!text) throw new Error(`Message scenario step ${index + 1} requires input`);
-
-    const localLedgerExecution = step.execution === "local-ledger";
-    const classification = localLedgerExecution
-      ? { ok: true, kind: "question", source: "published-local-ledger" }
-      : await jsonRequest(fetchImpl, endpoint(websiteUrl, "/classify-input"), {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ text, llmTemplateId: step.llmTemplateId || null }),
-      });
-    const interpretation = localLedgerExecution
-      ? {
-        essence: quantityLedger.buildRoleGroundedSubtractionPlan(
-          { graph: graphStore.getSnapshot() },
-          text,
-        ) || [],
-        overlayOps: [],
-        mutationOps: [],
-      }
-      : await jsonRequest(fetchImpl, endpoint(websiteUrl, "/essence"), {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          text,
-          inputKind: classification.kind,
-          classification,
-          llmTemplateId: step.llmTemplateId || null,
-          contextDB: { graph: graphStore.getSnapshot() },
-        }),
-      });
-
-    const rows = Array.isArray(interpretation.essence) ? interpretation.essence : [];
-    let answer = [];
-    if (classification.kind === "statement") {
-      graphStore.applyMutationOps(interpretation.mutationOps || []);
-      graphStore.ingestEssenceRows(rows);
-    }
-    if (classification.kind === "question") {
-      const query = graphStore.queryByEssenceTemplates(rows);
-      answer = Array.from(query?.vars?.ask || []);
-    }
-    const result = {
-      name: step.name || `step ${index + 1}`,
-      input: text,
-      kind: classification.kind,
-      execution: localLedgerExecution ? "local-ledger" : "remote-interpretation",
-      answer,
-      operations: derivedOperations(rows),
-      mutations: Array.isArray(interpretation.mutationOps)
-        ? interpretation.mutationOps.map((operation) => operation.type)
-        : [],
-      essence: rows,
-    };
-    assertStep(step, result, index);
-    results.push(result);
+    results.push(await executeMessageStep(step, {
+      websiteUrl,
+      fetchImpl,
+      graphStore,
+      quantityLedger,
+      index,
+    }));
   }
 
   return {
