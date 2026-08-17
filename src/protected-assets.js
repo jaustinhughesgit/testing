@@ -84,6 +84,43 @@ async function wrappingKey(privateKey, publicKey, salt, recipientId) {
   );
 }
 
+async function unwrapContentKey({ envelope, recipientId, privateKeyPkcs8 }) {
+  const wrap = envelope?.keyWraps?.user?.[recipientId];
+  if (!wrap) throw new Error(`The envelope has no wrap for recipient ${recipientId}`);
+  const privateKey = await subtle.importKey(
+    "pkcs8", Buffer.from(privateKeyPkcs8, "base64"), { name: "ECDH", namedCurve: "P-256" }, false, ["deriveBits"]
+  );
+  const ephemeral = await subtle.importKey(
+    "spki", bytes(wrap.ephemeralPublicKey), { name: "ECDH", namedCurve: "P-256" }, false, []
+  );
+  const aad = bytes(envelope.aad);
+  const key = await wrappingKey(privateKey, ephemeral, bytes(wrap.salt), recipientId);
+  return new Uint8Array(await subtle.decrypt(
+    { name: "AES-GCM", iv: bytes(wrap.iv), additionalData: aad }, key, bytes(wrap.wrappedKey)
+  ));
+}
+
+async function wrapContentKey({ contentKeyRaw, recipientId, publicKeySpki, keyId, aad }) {
+  const publicKey = await subtle.importKey(
+    "spki", Buffer.from(publicKeySpki, "base64"), { name: "ECDH", namedCurve: "P-256" }, false, []
+  );
+  const ephemeral = await subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, true, ["deriveBits"]);
+  const salt = webcrypto.getRandomValues(new Uint8Array(32));
+  const iv = webcrypto.getRandomValues(new Uint8Array(12));
+  const key = await wrappingKey(ephemeral.privateKey, publicKey, salt, recipientId);
+  const wrappedKey = await subtle.encrypt(
+    { name: "AES-GCM", iv, additionalData: aad }, key, contentKeyRaw
+  );
+  return {
+    algorithm: "ECDH-ES+A256KW",
+    keyId: String(keyId),
+    ephemeralPublicKey: b64url(await subtle.exportKey("spki", ephemeral.publicKey)),
+    iv: b64url(iv),
+    salt: b64url(salt),
+    wrappedKey: b64url(wrappedKey),
+  };
+}
+
 export async function encryptTextEnvelope({
   text,
   values,
@@ -152,19 +189,8 @@ export async function encryptTextEnvelope({
 }
 
 export async function decryptTextEnvelope({ envelope, recipientId, privateKeyPkcs8 }) {
-  const wrap = envelope?.keyWraps?.user?.[recipientId];
-  if (!wrap) throw new Error("The envelope has no wrap for this test device");
-  const privateKey = await subtle.importKey(
-    "pkcs8", Buffer.from(privateKeyPkcs8, "base64"), { name: "ECDH", namedCurve: "P-256" }, false, ["deriveBits"]
-  );
-  const ephemeral = await subtle.importKey(
-    "spki", bytes(wrap.ephemeralPublicKey), { name: "ECDH", namedCurve: "P-256" }, false, []
-  );
   const aad = bytes(envelope.aad);
-  const key = await wrappingKey(privateKey, ephemeral, bytes(wrap.salt), recipientId);
-  const rawContentKey = new Uint8Array(await subtle.decrypt(
-    { name: "AES-GCM", iv: bytes(wrap.iv), additionalData: aad }, key, bytes(wrap.wrappedKey)
-  ));
+  const rawContentKey = await unwrapContentKey({ envelope, recipientId, privateKeyPkcs8 });
   try {
     const contentKey = await subtle.importKey("raw", rawContentKey, { name: "AES-GCM" }, false, ["decrypt"]);
     const plaintext = await subtle.decrypt(
@@ -231,6 +257,80 @@ export async function revealProtectedText(client, stateStore, reference) {
   return decryptTextEnvelope({
     envelope: result.envelope,
     recipientId: state.protectedAssetRecipientId,
+    privateKeyPkcs8: state.deviceKeys.private.encPkcs8,
+  });
+}
+
+export async function requestProtectedTextAccess(client, reference, idempotencyKey = randomUUID()) {
+  return (await client.call("protectedAsset:request-access", {
+    body: { reference, idempotencyKey },
+  })).data;
+}
+
+export async function approveProtectedTextAccess(client, stateStore, {
+  requestId,
+  notificationId = null,
+  reference,
+  requesterUserId,
+  grantDuration = "15_minutes",
+}) {
+  const state = stateStore.load();
+  const ownerRecipientId = String(state.protectedAssetRecipientId || "");
+  if (!state.deviceKeys?.private?.encPkcs8 || !ownerRecipientId) {
+    throw new Error("The owner profile does not hold the local asset key");
+  }
+  const envelopeResult = (await client.call("protectedAsset:envelope", {
+    body: { reference, purpose: "policy_change", approved: true },
+  })).data;
+  const recipientId = String(requesterUserId || "").replace(/^u:/, "");
+  const recipientKey = (await client.call("getUserPubKeys", {
+    body: { userID: recipientId },
+  })).data;
+  const keyVersion = Number(recipientKey?.latestKeyVersion || 0);
+  if (!recipientKey?.pubEnc || !Number.isInteger(keyVersion) || keyVersion < 1) {
+    throw new Error(`No current public encryption key exists for user ${recipientId}`);
+  }
+  const contentKeyRaw = await unwrapContentKey({
+    envelope: envelopeResult.envelope,
+    recipientId: ownerRecipientId,
+    privateKeyPkcs8: state.deviceKeys.private.encPkcs8,
+  });
+  try {
+    const recipientWrap = await wrapContentKey({
+      contentKeyRaw,
+      recipientId,
+      publicKeySpki: recipientKey.pubEnc,
+      keyId: `${recipientId}:v${keyVersion}`,
+      aad: bytes(envelopeResult.envelope.aad),
+    });
+    return (await client.call("protectedAsset:decide-access", { body: {
+      requestId,
+      ...(notificationId ? { notificationId } : {}),
+      decision: "approved",
+      recipientWrap,
+      keyVersion,
+      grantDuration,
+    } })).data;
+  } finally {
+    contentKeyRaw.fill(0);
+  }
+}
+
+export async function useSharedProtectedText(client, stateStore, reference, requestId = null) {
+  const state = stateStore.load();
+  const recipientId = String(state.userId || "").replace(/^u:/, "");
+  if (!state.deviceKeys?.private?.encPkcs8 || !recipientId) {
+    throw new Error("The recipient profile does not hold its local decryption key");
+  }
+  const result = (await client.call("protectedAsset:envelope", { body: {
+    reference,
+    purpose: "recipient_query",
+    ...(requestId ? { requestId } : {}),
+    approved: true,
+  } })).data;
+  return decryptTextEnvelope({
+    envelope: result.envelope,
+    recipientId,
     privateKeyPkcs8: state.deviceKeys.private.encPkcs8,
   });
 }

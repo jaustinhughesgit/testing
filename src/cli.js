@@ -16,6 +16,7 @@ import { runScenario } from "./scenario.js";
 import { runMessageScenario } from "./message-scenario.js";
 import { runComputeScenario } from "./compute-scenario.js";
 import { runCrossUserContextScenario } from "./cross-user-context-scenario.js";
+import { runSeamlessCapabilityScenario } from "./seamless-capability-scenario.js";
 
 function parseArgs(argv) {
   const positional = [];
@@ -96,6 +97,18 @@ export async function main(argv = process.argv.slice(2)) {
     output(await runCrossUserContextScenario(path.resolve(process.cwd(), rest[0]), {
       config,
       profileNames: requireFlag(flags, "profiles"),
+    }));
+    return;
+  }
+  if (area === "capability-chain" && command === "run") {
+    requireWebsiteConfig(config);
+    if (!rest[0]) throw new Error("capability-chain run requires a scenario file");
+    output(await runSeamlessCapabilityScenario(path.resolve(process.cwd(), rest[0]), {
+      config,
+      profileNames: requireFlag(flags, "profiles"),
+      progress: ({ index, name, phase, status, poll }) => process.stderr.write(
+        `${index} ${name}${phase ? ` ${phase} ${poll}: ${status}` : ""}\n`
+      ),
     }));
     return;
   }

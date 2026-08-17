@@ -17,7 +17,7 @@ function unwrapResponse(value) {
   return value?.response ?? value;
 }
 
-async function loadPublishedContextPublication(websiteUrl, fetchImpl) {
+export async function loadPublishedContextPublication(websiteUrl, fetchImpl) {
   const url = endpoint(websiteUrl, "/workers/contextPublicationWorkerLib.js");
   const response = await fetchImpl(url);
   if (!response.ok) throw new Error(`${url} failed with HTTP ${response.status}`);
@@ -34,7 +34,7 @@ async function loadPublishedContextPublication(websiteUrl, fetchImpl) {
   return library;
 }
 
-function actorProfiles(scenario, profileNames) {
+export function actorProfiles(scenario, profileNames) {
   const actors = Array.isArray(scenario?.actors) ? scenario.actors.map(String) : [];
   const profiles = String(profileNames || "").split(",").map((value) => value.trim()).filter(Boolean);
   if (!actors.length || actors.length !== profiles.length) {
@@ -66,7 +66,7 @@ function stableTextId(value) {
   return (hash >>> 0).toString(16).padStart(8, "0");
 }
 
-async function publishDelta(actor, before, after, source, contextPublication) {
+export async function publishDelta(actor, before, after, source, contextPublication) {
   const addedRelationIds = Object.keys(after.relations || {}).filter((id) => !before.relations?.[id]);
   const removedRelationIds = Object.keys(before.relations || {}).filter((id) => !after.relations?.[id]);
   const payload = contextPublication.deltaEnvelope({
@@ -96,7 +96,7 @@ async function publishDelta(actor, before, after, source, contextPublication) {
   return { nodes: (result?.nodes || []).length, relations: (result?.relations || []).length };
 }
 
-async function hydrateNamed(actor, labels, contextPublication) {
+export async function hydrateNamed(actor, labels, contextPublication) {
   let working = actor.graphStore.getSnapshot();
   const users = [];
   for (const rawLabel of labels) {
@@ -136,7 +136,7 @@ async function hydrateNamed(actor, labels, contextPublication) {
   return users;
 }
 
-async function hydrateCurrentActor(actor, contextPublication) {
+export async function hydrateCurrentActor(actor, contextPublication) {
   let working = actor.graphStore.getSnapshot();
   let cursor = null;
   let pages = 0;

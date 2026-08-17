@@ -14,6 +14,7 @@ const sources = new Map([
   ["https://public.1var.com/compromise.js", "modules/_analyzer/compromise.js"],
   ["https://public.1var.com/compromise-numbers.js", "modules/_analyzer/compromise-numbers.js"],
   ["https://website.example/workers/pathBindingWorkerLib.js", "workers/pathBindingWorkerLib.js"],
+  ["https://website.example/workers/pathResponseWorkerLib.js", "workers/pathResponseWorkerLib.js"],
   ["https://website.example/workers/graphWorkerLib.js", "workers/graphWorkerLib.js"],
   ["https://website.example/workers/semanticEntityCompilerWorkerLib.js", "workers/semanticEntityCompilerWorkerLib.js"],
   ["https://website.example/workers/patternWorkerLib.js", "workers/patternWorkerLib.js"],

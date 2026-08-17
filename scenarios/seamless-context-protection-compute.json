@@ -1,0 +1,135 @@
+{
+  "name": "Generic ContextDB, protected sharing, and Compute continuity",
+  "ownerName": "Austin",
+  "ownerNameEnv": "ONEVAR_TEST_OWNER_NAME",
+  "actors": ["owner", "reader"],
+  "steps": [
+    {
+      "type": "statement",
+      "name": "owner names himself",
+      "actor": "owner",
+      "equationId": "self_property_composed_statement",
+      "input": "My name is {{ownerName}}."
+    },
+    {
+      "type": "statement",
+      "name": "owner records ordinary quantity",
+      "actor": "owner",
+      "equationId": "quantity_observation_composed_statement",
+      "input": "I have 3 cats."
+    },
+    {
+      "type": "hydrate",
+      "name": "reader positions the named owner",
+      "actor": "reader",
+      "labels": ["{{ownerName}}"]
+    },
+    {
+      "type": "question",
+      "name": "reader gets ordinary quantity",
+      "actor": "reader",
+      "equationId": "quantity_current_composed_query",
+      "input": "How many cats does {{ownerName}} have?",
+      "refreshLabels": ["{{ownerName}}"],
+      "expect": {
+        "answer": ["3"],
+        "response": "{{ownerName}} has 3 cats."
+      }
+    },
+    {
+      "type": "protectedStatement",
+      "name": "owner records protected quantity",
+      "actor": "owner",
+      "as": "dogs",
+      "equationId": "quantity_observation_composed_statement",
+      "input": "I have *** dogs.",
+      "semanticInput": "I have 4 dogs.",
+      "secretEnv": "ONEVAR_TEST_PROTECTED_VALUE",
+      "label": "Protected quantity"
+    },
+    {
+      "type": "protectedQuestion",
+      "name": "reader is asked to request permission",
+      "actor": "reader",
+      "asset": "dogs",
+      "equationId": "quantity_current_composed_query",
+      "input": "How many dogs does {{ownerName}} have?",
+      "refreshLabels": ["{{ownerName}}"]
+    },
+    {
+      "type": "requestProtectedAccess",
+      "name": "reader requests permission",
+      "actor": "reader",
+      "asset": "dogs"
+    },
+    {
+      "type": "receiveProtectedRequest",
+      "name": "owner receives permission request",
+      "actor": "owner",
+      "asset": "dogs"
+    },
+    {
+      "type": "approveProtectedAccess",
+      "name": "owner grants timed access",
+      "actor": "owner",
+      "asset": "dogs",
+      "grantDuration": "15_minutes"
+    },
+    {
+      "type": "resolvedProtectedQuestion",
+      "name": "reader decrypts and answers locally",
+      "actor": "reader",
+      "asset": "dogs",
+      "equationId": "quantity_current_composed_query",
+      "input": "How many dogs does {{ownerName}} have?",
+      "expect": {
+        "answer": ["4"],
+        "response": "{{ownerName}} has 4 dogs."
+      }
+    },
+    {
+      "type": "statement",
+      "name": "owner records register status",
+      "actor": "owner",
+      "equationId": "self_property_composed_statement",
+      "input": "My register status is open."
+    },
+    {
+      "type": "buildCapability",
+      "name": "owner builds generic ContextDB report",
+      "actor": "owner",
+      "as": "property_report",
+      "build": {
+        "requirementSegments": [
+          "Create a Compute entity that gets my register status from ContextDB and reports it",
+          "It has exactly one required string input named status. Its binding source is ContextDB, its subject is speaker, and its property is register status. Do not ask the user for status",
+          "When I ask What's my register status, return Your register status is followed by the status"
+        ],
+        "expectBinding": {
+          "name": "status",
+          "source": "contextdb",
+          "subject": "speaker",
+          "property": "register status"
+        }
+      }
+    },
+    {
+      "type": "invokeCapability",
+      "name": "owner invokes property report",
+      "actor": "owner",
+      "capability": "property_report",
+      "input": "What's my register status?",
+      "expect": { "response": "Your register status is open." }
+    },
+    {
+      "type": "invokeCapability",
+      "name": "reader invokes positioned property report",
+      "actor": "reader",
+      "capability": "property_report",
+      "input": "What is {{ownerName}}'s register status?",
+      "contextSubject": "{{ownerName}}",
+      "refreshLabels": ["{{ownerName}}"],
+      "expect": { "response": "{{ownerName}}'s register status is open." }
+    }
+  ]
+}

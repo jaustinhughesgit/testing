@@ -70,11 +70,19 @@ function requirementEnvelope(segments) {
   };
 }
 
-async function callConvert(client, workspaceId, body) {
-  return unwrap((await client.call("convert", { path: [workspaceId], body })).data);
+async function callConvert(client, workspaceId, body, { retries = 4 } = {}) {
+  let attempt = 0;
+  while (true) {
+    try {
+      return unwrap((await client.call("convert", { path: [workspaceId], body })).data);
+    } catch (error) {
+      if (![429, 502, 503, 504].includes(Number(error?.status)) || attempt >= retries) throw error;
+      await wait(500 * (2 ** attempt++));
+    }
+  }
 }
 
-async function buildCapability(client, workspaceId, build, progress = () => {}) {
+export async function buildCapability(client, workspaceId, build, progress = () => {}) {
   const prompt = requirementEnvelope(build.requirementSegments || []);
   let discoveryJobId = null;
   let capabilityRequest = null;
@@ -157,7 +165,7 @@ async function buildCapability(client, workspaceId, build, progress = () => {}) 
   throw new Error("Convert build exceeded its bounded polling window");
 }
 
-async function loadComputeRuntime(websiteUrl, fetchImpl) {
+export async function loadComputeRuntime(websiteUrl, fetchImpl) {
   const url = new URL("/workers/computeCapabilityWorkerLib.js", `${websiteUrl.replace(/\/+$/, "")}/`).toString();
   const response = await fetchImpl(url);
   if (!response.ok) throw new Error(`${url} failed with HTTP ${response.status}`);
@@ -177,6 +185,7 @@ export async function loadPublishedSemanticPathRuntime(websiteUrl, fetchImpl) {
     "https://public.1var.com/compromise.js",
     "https://public.1var.com/compromise-numbers.js",
     new URL("/workers/pathBindingWorkerLib.js", base).toString(),
+    new URL("/workers/pathResponseWorkerLib.js", base).toString(),
     new URL("/workers/semanticEntityCompilerWorkerLib.js", base).toString(),
     new URL("/workers/patternWorkerLib.js", base).toString(),
   ];
@@ -198,6 +207,7 @@ export async function loadPublishedSemanticPathRuntime(websiteUrl, fetchImpl) {
   }
   if (
     typeof sandbox.nlp !== "function"
+    || typeof sandbox.pathResponseWorkerLib?.render !== "function"
     || typeof sandbox.createPatternRuntimeV3 !== "function"
     || typeof sandbox.oneVarSemanticEntityCompiler?.compileEquation !== "function"
   ) throw new Error("Published semantic Path runtime is incomplete");
@@ -293,18 +303,33 @@ export async function loadPublishedSemanticPathRuntime(websiteUrl, fetchImpl) {
       );
       const mode = path.right?.state?.mode || "statement";
       let answer = [];
+      let queryValues = {};
       if (mode === "question") {
         const query = graphStore.queryByEssenceTemplates(rows);
         answer = Array.from(query?.vars?.ask || []);
+        queryValues = query?.vars || {};
       } else {
         graphStore.ingestEssenceRows(rows);
       }
+      const resolveEntity = (value) => {
+        const entity = graphStore.getSnapshot?.()?.entities?.[String(value || "")];
+        return entity?.names?.[0] || entity?.lemmas?.[0] || value;
+      };
+      const responseValues = sandbox.pathResponseWorkerLib.values(
+        bindings,
+        queryValues,
+        { resolveEntity }
+      );
+      const responseSentence = mode === "question"
+        ? sandbox.pathResponseWorkerLib.render(path.right?.state?.responseTemplate || "{{ask|join:, }}", responseValues)
+        : "";
       return {
         name: equationId,
         input: text,
         kind: mode,
         execution: "published-semantic-path",
         answer,
+        responseSentence,
         operations: [],
         mutations: [],
         essence: rows,
@@ -314,7 +339,7 @@ export async function loadPublishedSemanticPathRuntime(websiteUrl, fetchImpl) {
   };
 }
 
-function computePath(manifest, operation) {
+export function computePath(manifest, operation, { contextBindingHints = {}, referentMemory = [] } = {}) {
   return {
     left: { state: { pattern: { kind: "question", operation: "invoke_compute_capability", slotDefinitions: [] } } },
     right: {
@@ -330,8 +355,11 @@ function computePath(manifest, operation) {
           version: manifest.version,
           operationId: operation.operationId,
           inputs: operation.inputs || [],
+          contextBindingHints,
+          referentMemory,
           outputs: operation.outputs || [],
           protectedAssetRequirements: operation.protectedAssetRequirements || [],
+          freshness: operation.freshness || { mode: "none", ttlSeconds: 0 },
           answerTemplate: operation.answerTemplate,
         },
       },
@@ -339,7 +367,7 @@ function computePath(manifest, operation) {
   };
 }
 
-function authenticatedFetch(stateStore, fetchImpl) {
+export function authenticatedFetch(stateStore, fetchImpl) {
   return async (url, options = {}) => {
     const token = stateStore.load().accessToken;
     const headers = new Headers(options.headers || {});

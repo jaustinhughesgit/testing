@@ -3,10 +3,12 @@ import assert from "node:assert/strict";
 import { webcrypto } from "node:crypto";
 import { createTestDeviceKeys } from "../src/device-keys.js";
 import {
+  approveProtectedTextAccess,
   decryptTextEnvelope,
   defaultProviderCredentialMetadata,
   defaultTextMetadata,
   encryptTextEnvelope,
+  useSharedProtectedText,
 } from "../src/protected-assets.js";
 
 test("protected text is absent from its envelope and decrypts only with the device key", async () => {
@@ -79,4 +81,49 @@ test("a provider credential has a recipient wrap and a separate executor wrap", 
     recipientId: "device_testrecipient1234",
     privateKeyPkcs8: recipient.private.encPkcs8,
   }), { api_key: "secret-value" });
+});
+
+test("owner approval rewraps one content key and the recipient decrypts only its envelope", async () => {
+  const owner = await createTestDeviceKeys();
+  const reader = await createTestDeviceKeys();
+  const ownerRecipientId = "device_owner1234567890";
+  const assetId = "pa_recipientrewrap1234567890";
+  const plaintext = "local-only value";
+  const envelope = await encryptTextEnvelope({
+    text: plaintext,
+    metadata: defaultTextMetadata(),
+    recipientId: ownerRecipientId,
+    publicKeySpki: owner.public.pubEnc,
+    assetId,
+  });
+  const ownerState = { load: () => ({
+    protectedAssetRecipientId: ownerRecipientId,
+    deviceKeys: owner,
+  }) };
+  let decisionBody = null;
+  const ownerClient = { call: async (action, { body }) => {
+    if (action === "protectedAsset:envelope") return { data: { envelope } };
+    if (action === "getUserPubKeys") return { data: { pubEnc: reader.public.pubEnc, latestKeyVersion: 1 } };
+    if (action === "protectedAsset:decide-access") {
+      decisionBody = body;
+      return { data: { decision: "approved" } };
+    }
+    throw new Error(`unexpected action ${action}`);
+  } };
+  await approveProtectedTextAccess(ownerClient, ownerState, {
+    requestId: `par_${"a".repeat(40)}`,
+    reference: `protected_asset:${assetId}`,
+    requesterUserId: "22",
+  });
+  assert.equal(decisionBody.recipientWrap.keyId, "22:v1");
+  assert.equal(JSON.stringify(decisionBody).includes(plaintext), false);
+
+  const recipientEnvelope = structuredClone(envelope);
+  recipientEnvelope.keyWraps.user = { "22": decisionBody.recipientWrap };
+  const readerClient = { call: async () => ({ data: { envelope: recipientEnvelope } }) };
+  const readerState = { load: () => ({ userId: "22", deviceKeys: reader }) };
+  assert.deepEqual(
+    await useSharedProtectedText(readerClient, readerState, `protected_asset:${assetId}`),
+    { text: plaintext }
+  );
 });

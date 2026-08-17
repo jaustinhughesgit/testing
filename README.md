@@ -62,6 +62,14 @@ ONEVAR_TEST_WEBSITE_URL=https://1var.com \
   node src/cli.js context run scenarios/cross-user-context-refresh.json \
   --profiles context-owner,context-reader
 
+# Prove ordinary cross-user Context, requestable zero-trust data with a timed
+# owner grant, and self/named ContextDB-backed Compute invocation in one chain.
+ONEVAR_TEST_WEBSITE_URL=https://1var.com \
+ONEVAR_TEST_PROTECTED_VALUE=4 \
+  node src/cli.js capability-chain run \
+  scenarios/seamless-context-protection-compute.json \
+  --profiles seamless-owner,seamless-reader
+
 # Reset only an explicitly enabled, server-authorized test environment.
 node src/cli.js db reset --confirm reset:local
 ```
