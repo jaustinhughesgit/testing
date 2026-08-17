@@ -7,12 +7,14 @@ import {
   selectCapabilityManifest,
   selectReusableCapabilityManifest,
 } from "../src/compute-scenario.js";
+import { loadPublishedGraphStore } from "../src/message-scenario.js";
 
 const awsPublic = path.resolve(import.meta.dirname, "../../aws/app/public");
 const sources = new Map([
   ["https://public.1var.com/compromise.js", "modules/_analyzer/compromise.js"],
   ["https://public.1var.com/compromise-numbers.js", "modules/_analyzer/compromise-numbers.js"],
   ["https://website.example/workers/pathBindingWorkerLib.js", "workers/pathBindingWorkerLib.js"],
+  ["https://website.example/workers/graphWorkerLib.js", "workers/graphWorkerLib.js"],
   ["https://website.example/workers/semanticEntityCompilerWorkerLib.js", "workers/semanticEntityCompilerWorkerLib.js"],
   ["https://website.example/workers/patternWorkerLib.js", "workers/patternWorkerLib.js"],
   ["https://website.example/modules/_pathbuilder/semantic-graph-path-dataset.json", "modules/_pathbuilder/semantic-graph-path-dataset.json"],
@@ -75,7 +77,7 @@ test("a command scenario executes the published composed self-property Path", as
   assert.deepEqual(Array.from(ingested.at(-1)), ["present", "speaker", "register status", "closed"]);
 });
 
-test("a command scenario resolves a named entity and executes the published quantity question Path", async () => {
+test("a command scenario constrains a named quantity question to the requested item", async () => {
   const fetchImpl = async (url) => {
     const relative = sources.get(String(url));
     if (!relative) return new Response("missing", { status: 404 });
@@ -86,25 +88,41 @@ test("a command scenario resolves a named entity and executes the published quan
     });
   };
   const runtime = await loadPublishedSemanticPathRuntime("https://website.example", fetchImpl);
-  const graph = {
-    entities: { usr_12: { id: "usr_12", names: ["ardenzo"], lemmas: [] } },
-    relations: {},
-    mentions: { ardenzo: { entities: ["usr_12"] } },
-  };
-  let queryRows = null;
+  const graphStore = await loadPublishedGraphStore("https://website.example", fetchImpl);
+  graphStore.loadSnapshot({
+    entities: {
+      usr_12: { id: "usr_12", names: ["ardenzo"], lemmas: [] },
+      prop_observe: { id: "prop_observe", names: [], lemmas: ["observe_quantity"] },
+      prop_item: { id: "prop_item", names: [], lemmas: ["item"] },
+      prop_delta: { id: "prop_delta", names: [], lemmas: ["quantity_delta"] },
+      cat_record: { id: "cat_record", names: [], lemmas: ["cat observation"] },
+      cat: { id: "cat", names: [], lemmas: ["cat"] },
+      three: { id: "three", names: [], lemmas: ["3"] },
+      lantern_record: { id: "lantern_record", names: [], lemmas: ["lantern observation"] },
+      lantern: { id: "lantern", names: [], lemmas: ["lantern"] },
+      four: { id: "four", names: [], lemmas: ["4"] },
+    },
+    relations: {
+      cat_owned: { id: "cat_owned", subj: "usr_12", prop: "prop_observe", obj: "cat_record" },
+      cat_item: { id: "cat_item", subj: "cat_record", prop: "prop_item", obj: "cat" },
+      cat_delta: { id: "cat_delta", subj: "cat_record", prop: "prop_delta", obj: "three" },
+      lantern_owned: { id: "lantern_owned", subj: "usr_12", prop: "prop_observe", obj: "lantern_record" },
+      lantern_item: { id: "lantern_item", subj: "lantern_record", prop: "prop_item", obj: "lantern" },
+      lantern_delta: { id: "lantern_delta", subj: "lantern_record", prop: "prop_delta", obj: "four" },
+    },
+    mentions: {
+      ardenzo: { entities: ["usr_12"] },
+      cat: { entities: ["cat"] },
+      lantern: { entities: ["lantern"] },
+    },
+  });
   const result = runtime.execute(
     "quantity_current_composed_query",
-    "How many cats does Ardenzo have?",
-    {
-      getSnapshot: () => structuredClone(graph),
-      queryByEssenceTemplates: (rows) => {
-        queryRows = rows;
-        return { vars: { ask: [3] } };
-      },
-    },
+    "How many lanterns does Ardenzo have?",
+    graphStore,
   );
 
-  assert.deepEqual(result.answer, [3]);
-  assert.equal(queryRows[0][1].entityId, "usr_12");
-  assert.equal(queryRows[0][1].var, "owner_entity");
+  assert.deepEqual(result.answer, ["4"]);
+  assert.equal(result.essence[0][1].entityId, "usr_12");
+  assert.equal(result.essence[0][1].var, "owner_entity");
 });

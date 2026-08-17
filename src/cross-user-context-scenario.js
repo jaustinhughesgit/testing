@@ -104,10 +104,24 @@ async function hydrateNamed(actor, labels, contextPublication) {
     let cursor = null;
     let pages = 0;
     let namedServerId = "";
+    const snapshot = actor.graphStore.getSnapshot();
+    const exactEntityIds = Object.values(snapshot.entities || {})
+      .filter((entity) => (entity?.names || []).some((name) => (
+        String(name).trim().toLowerCase() === query.toLowerCase()
+      )))
+      .map((entity) => String(entity.id || ""))
+      .filter(Boolean);
+    const preferredEntityId = exactEntityIds.length === 1 ? exactEntityIds[0] : "";
     do {
       const page = unwrapResponse((await actor.client.call("contextGraphHydrateNamed", {
         path: [actor.workspaceId],
-        body: { schemaVersion: 1, query, cursor, limit: 300 },
+        body: {
+          schemaVersion: 1,
+          query,
+          ...(preferredEntityId ? { entityId: preferredEntityId } : {}),
+          cursor,
+          limit: 300,
+        },
       })).data);
       pages += 1;
       if (page?.ambiguous === true) throw new Error(`Named hydration for ${query} is ambiguous`);
@@ -120,6 +134,22 @@ async function hydrateNamed(actor, labels, contextPublication) {
   }
   actor.graphStore.loadSnapshot(working);
   return users;
+}
+
+async function hydrateCurrentActor(actor, contextPublication) {
+  let working = actor.graphStore.getSnapshot();
+  let cursor = null;
+  let pages = 0;
+  do {
+    const page = unwrapResponse((await actor.client.call("contextGraphHydrate", {
+      path: [actor.workspaceId],
+      body: { schemaVersion: 1, cursor, limit: 300 },
+    })).data);
+    working = contextPublication.mergeHydrationPage(working, page, {});
+    cursor = String(page?.cursor || "") || null;
+    pages += 1;
+  } while (cursor && pages < 20);
+  actor.graphStore.loadSnapshot(working);
 }
 
 export async function runCrossUserContextScenarioObject(scenario, {
@@ -150,6 +180,7 @@ export async function runCrossUserContextScenarioObject(scenario, {
       graphStore: await loadPublishedGraphStore(config.websiteUrl, fetchImpl),
       client: new OneVarApiClient({ ...config, stateStore, fetchImpl }),
     };
+    await hydrateCurrentActor(actors[actorName], contextPublication);
   }
 
   const results = [];
