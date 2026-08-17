@@ -234,7 +234,13 @@ export async function runSeamlessCapabilityScenarioObject(rawScenario, {
       const graph = actor.graphStore.getSnapshot();
       const prefix = protectedPresentation.relationRowsBeforeAggregates(execution.essence);
       const details = actor.graphStore.queryByEssenceTemplates(prefix);
-      const references = protectedPresentation.requestableQueryReferences(details, new Map(), graph);
+      const references = protectedPresentation.requestableQueryReferences(
+        details,
+        // Worker libraries execute in an isolated VM realm. Pass the wire-safe
+        // record used by the browser persistence contract, not a host-realm Map.
+        Object.fromEntries(actor.protectedEntityReferences),
+        graph
+      );
       const expectedReference = memory.protected[step.asset || "default"]?.reference;
       if (!expectedReference || !references.includes(expectedReference)) {
         throw new Error(`${step.name || step.input}: protected query did not retain its requestable asset reference`);
@@ -299,9 +305,8 @@ export async function runSeamlessCapabilityScenarioObject(rawScenario, {
       const item = memory.protected[step.asset || "default"];
       const values = await useSharedProtectedText(actor.client, actor.stateStore, item.reference, item.requestId);
       const graph = actor.graphStore.getSnapshot();
-      const entityReferences = Object.fromEntries(Object.entries(graph.entities || {})
-        .filter(([, entity]) => entity?.protectedAssetReference === item.reference)
-        .map(([entityId]) => [entityId, item.reference]));
+      const entityReferences = Object.fromEntries([...actor.protectedEntityReferences]
+        .filter(([entityId, reference]) => graph.entities?.[entityId] && reference === item.reference));
       const resolvedGraph = protectedPresentation.resolvedQueryGraph(
         graph,
         entityReferences,

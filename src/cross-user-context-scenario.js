@@ -66,6 +66,22 @@ function stableTextId(value) {
   return (hash >>> 0).toString(16).padStart(8, "0");
 }
 
+export function retainProtectedEntityReferences(actor, snapshot) {
+  actor.protectedEntityReferences ||= new Map();
+  for (const [entityId, reference] of Object.entries(snapshot?.protectedEntityReferences || {})) {
+    if (entityId && /^protected_asset:pa_[a-zA-Z0-9_-]{16,160}$/.test(String(reference || ""))) {
+      actor.protectedEntityReferences.set(entityId, String(reference));
+    }
+  }
+  for (const [entityId, entity] of Object.entries(snapshot?.entities || {})) {
+    const reference = String(entity?.protectedAssetReference || "");
+    if (/^protected_asset:pa_[a-zA-Z0-9_-]{16,160}$/.test(reference)) {
+      actor.protectedEntityReferences.set(entityId, reference);
+    }
+  }
+  return actor.protectedEntityReferences;
+}
+
 export async function publishDelta(actor, before, after, source, contextPublication) {
   const addedRelationIds = Object.keys(after.relations || {}).filter((id) => !before.relations?.[id]);
   const removedRelationIds = Object.keys(before.relations || {}).filter((id) => !after.relations?.[id]);
@@ -92,7 +108,9 @@ export async function publishDelta(actor, before, after, source, contextPublicat
   const idMap = Object.fromEntries((result?.nodes || [])
     .map((node) => [String(node?.localId || ""), String(node?.serverId || "")])
     .filter(([localId, serverId]) => localId && serverId));
-  actor.graphStore.loadSnapshot(contextPublication.remapGraphSnapshotEntityIds(after, idMap));
+  const remapped = contextPublication.remapGraphSnapshotEntityIds(after, idMap);
+  retainProtectedEntityReferences(actor, remapped);
+  actor.graphStore.loadSnapshot(remapped);
   return { nodes: (result?.nodes || []).length, relations: (result?.relations || []).length };
 }
 
@@ -132,6 +150,7 @@ export async function hydrateNamed(actor, labels, contextPublication) {
     } while (cursor && pages < 20);
     users.push({ query, namedServerId, pages });
   }
+  retainProtectedEntityReferences(actor, working);
   actor.graphStore.loadSnapshot(working);
   return users;
 }
@@ -149,6 +168,7 @@ export async function hydrateCurrentActor(actor, contextPublication) {
     cursor = String(page?.cursor || "") || null;
     pages += 1;
   } while (cursor && pages < 20);
+  retainProtectedEntityReferences(actor, working);
   actor.graphStore.loadSnapshot(working);
 }
 
