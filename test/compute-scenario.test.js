@@ -127,3 +127,32 @@ test("a command scenario constrains a named quantity question to the requested i
   assert.equal(result.essence[0][1].entityId, "usr_12");
   assert.equal(result.essence[0][1].var, "owner_entity");
 });
+
+test("a named entity binding preserves the normalized name instead of its linguistic root", async () => {
+  const fetchImpl = async (url) => {
+    const relative = sources.get(String(url));
+    if (!relative) return new Response("missing", { status: 404 });
+    const body = fs.readFileSync(path.join(awsPublic, relative));
+    return new Response(body, {
+      status: 200,
+      headers: { "content-type": relative.endsWith(".json") ? "application/json" : "text/javascript" },
+    });
+  };
+  const runtime = await loadPublishedSemanticPathRuntime("https://website.example", fetchImpl);
+  const graphStore = await loadPublishedGraphStore("https://website.example", fetchImpl);
+  graphStore.loadSnapshot({
+    entities: {
+      usr_21: { id: "usr_21", names: ["austinflow0817verified"], lemmas: [] },
+    },
+    relations: {},
+    mentions: { austinflow0817verified: { entities: ["usr_21"] } },
+  });
+  const result = runtime.execute(
+    "quantity_current_composed_query",
+    "How many cats does Austinflow0817verified have?",
+    graphStore,
+  );
+
+  assert.equal(result.bindings.owner, "usr_21");
+  assert.equal(result.essence[0][1].entityId, "usr_21");
+});

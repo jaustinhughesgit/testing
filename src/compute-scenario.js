@@ -246,7 +246,12 @@ export async function loadPublishedSemanticPathRuntime(websiteUrl, fetchImpl) {
         .filter(Boolean).join(" ");
       return sandbox.oneVarPathBindingWorkerLib?.parseNumberValue?.(raw) ?? raw;
     }
-    const field = binding.value === "text" ? "text" : binding.value === "normal" ? "normal" : "lemma";
+    // Entity identity must preserve the normalized surface form. Linguistic
+    // roots are correct for verbs/nouns but can stem a person's name (for
+    // example a name ending in "verified") and break exact positioning.
+    const field = binding.value === "text"
+      ? "text"
+      : (["normal", "resolvedEntity", "resolvedEntityList"].includes(binding.value) ? "normal" : "lemma");
     const value = selected.map((token) => String(token[field] || "").toLowerCase()).filter(Boolean).join(" ");
     if (binding.value === "resolvedEntity") {
       const graph = graphStore.getSnapshot();
