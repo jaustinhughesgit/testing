@@ -37,6 +37,24 @@ function findManifest(value, seen = new Set()) {
   return null;
 }
 
+export function selectCapabilityManifest(value) {
+  const direct = value?.capabilityManifest;
+  if (
+    Number(direct?.schemaVersion) === 1
+    && direct.capabilityId
+    && direct.entityId
+    && Array.isArray(direct.operations)
+  ) return direct;
+  return findManifest(value);
+}
+
+export function selectReusableCapabilityManifest(value, status) {
+  if (String(status || "") === "CAPABILITY_EXTENSION_REQUIRED") {
+    throw new Error("Convert discovery requires an entity extension, which this create/reuse scenario does not perform");
+  }
+  return selectCapabilityManifest(value);
+}
+
 function requirementEnvelope(segments) {
   const normalized = segments.map((segment, index) => {
     const text = String(segment || "").replace(/\s+/g, " ").trim();
@@ -79,7 +97,7 @@ async function buildCapability(client, workspaceId, build, progress = () => {}) 
       continue;
     }
     if (status !== "CAPABILITY_BUILD_REQUIRED") {
-      const manifest = findManifest(result);
+      const manifest = selectReusableCapabilityManifest(result, status);
       if (manifest) return { result, manifest, prompt };
       throw new Error(`Convert discovery stopped with ${status || "an unknown status"}`);
     }
@@ -132,7 +150,7 @@ async function buildCapability(client, workspaceId, build, progress = () => {}) 
       if (!buildId || !buildContinuation) throw new Error("Convert build retry omitted continuation state");
       continue;
     }
-    const manifest = findManifest(result);
+    const manifest = selectCapabilityManifest(result);
     if (!manifest) throw new Error(`Convert build stopped with ${status || "an unknown status"}`);
     return { result, manifest, prompt, capabilityRequest };
   }

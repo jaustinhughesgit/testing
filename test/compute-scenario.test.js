@@ -2,7 +2,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { loadPublishedSemanticPathRuntime } from "../src/compute-scenario.js";
+import {
+  loadPublishedSemanticPathRuntime,
+  selectCapabilityManifest,
+  selectReusableCapabilityManifest,
+} from "../src/compute-scenario.js";
 
 const awsPublic = path.resolve(import.meta.dirname, "../../aws/app/public");
 const sources = new Map([
@@ -12,6 +16,38 @@ const sources = new Map([
   ["https://website.example/workers/patternWorkerLib.js", "workers/patternWorkerLib.js"],
   ["https://website.example/modules/_pathbuilder/semantic-graph-path-dataset.json", "modules/_pathbuilder/semantic-graph-path-dataset.json"],
 ]);
+
+test("compute scenarios prefer the authoritative registered manifest over an internal pending build artifact", () => {
+  const operation = {
+    operationId: "format",
+    inputs: [],
+    outputs: [{ name: "formatted", type: "string", required: true }],
+  };
+  const manifest = selectCapabilityManifest({
+    parseResults: {
+      capabilityManifest: {
+        schemaVersion: 1,
+        capabilityId: "formatter",
+        entityId: "pending-capability-entity",
+        operations: [operation],
+      },
+    },
+    capabilityManifest: {
+      schemaVersion: 1,
+      capabilityId: "formatter",
+      entityId: "1v4r-registered",
+      operations: [operation],
+    },
+  });
+  assert.equal(manifest.entityId, "1v4r-registered");
+});
+
+test("compute create/reuse scenarios fail explicitly when discovery requires Edit", () => {
+  assert.throws(
+    () => selectReusableCapabilityManifest({}, "CAPABILITY_EXTENSION_REQUIRED"),
+    /requires an entity extension/
+  );
+});
 
 test("a command scenario executes the published composed self-property Path", async () => {
   const fetchImpl = async (url) => {
