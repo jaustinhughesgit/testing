@@ -4,6 +4,7 @@
  */
 import fs from "node:fs";
 import vm from "node:vm";
+import { randomUUID } from "node:crypto";
 import { StateStore } from "./state-store.js";
 import { OneVarApiClient } from "./api-client.js";
 import { loadPublishedGraphStore } from "./message-scenario.js";
@@ -68,6 +69,16 @@ function stableTextId(value) {
   return (hash >>> 0).toString(16).padStart(8, "0");
 }
 
+export function scenarioRequestId({ runKey, index, kind, workspaceId = "", input = "" }) {
+  return [
+    "seamless",
+    stableTextId(runKey),
+    String(kind || "input"),
+    String(index),
+    stableTextId(`${workspaceId}\n${input}`),
+  ].join("-");
+}
+
 function exactNamedEntity(actor, label) {
   const normalized = String(label || "").trim().toLowerCase();
   const matches = Object.values(actor.graphStore.getSnapshot().entities || {}).filter((entity) => (
@@ -121,11 +132,16 @@ export async function runSeamlessCapabilityScenarioObject(rawScenario, {
   profileNames,
   fetchImpl = fetch,
   progress = () => {},
+  runId = randomUUID(),
 } = {}) {
   if (!config?.apiUrl || !config?.originalHost || !config?.websiteUrl) {
     throw new Error("apiUrl, originalHost, and websiteUrl are required");
   }
   const scenario = substitute(rawScenario, scenarioVariables(rawScenario));
+  // Idempotency belongs to one captured input, not to its wording. A fresh run
+  // may intentionally repeat the same sentence while producing a new opaque
+  // protected reference, so every external request shares one run-scoped key.
+  const runKey = stableTextId(runId);
   const profiles = actorProfiles(scenario, profileNames);
   const contextPublication = await loadPublishedContextPublication(config.websiteUrl, fetchImpl);
   const semanticPaths = await loadPublishedSemanticPathRuntime(config.websiteUrl, fetchImpl);
@@ -158,7 +174,9 @@ export async function runSeamlessCapabilityScenarioObject(rawScenario, {
       const before = actor.graphStore.getSnapshot();
       const execution = semanticPaths.execute(step.equationId, step.input, actor.graphStore);
       const publication = await publishDelta(actor, before, actor.graphStore.getSnapshot(), {
-        requestId: `seamless-${index + 1}-${stableTextId(`${actor.workspaceId}\n${step.input}`)}`,
+        requestId: scenarioRequestId({
+          runKey, index: index + 1, kind: "statement", workspaceId: actor.workspaceId, input: step.input,
+        }),
         sentence: step.input,
       }, contextPublication);
       results.push({ type: step.type, actor: step.actor, input: step.input, publication });
@@ -197,7 +215,9 @@ export async function runSeamlessCapabilityScenarioObject(rawScenario, {
         reference,
       }]);
       const publication = await publishDelta(actor, before, views.publication, {
-        requestId: `seamless-protected-${index + 1}-${stableTextId(`${actor.workspaceId}\n${step.input}`)}`,
+        requestId: scenarioRequestId({
+          runKey, index: index + 1, kind: "protected", workspaceId: actor.workspaceId, input: step.input,
+        }),
         sentence: step.input,
       }, contextPublication);
       memory.protected[step.as || "default"] = { reference, owner: step.actor };
@@ -232,7 +252,10 @@ export async function runSeamlessCapabilityScenarioObject(rawScenario, {
       const requested = await requestProtectedTextAccess(
         actor.client,
         item.reference,
-        `seamless-${actor.workspaceId}-${index + 1}`
+        scenarioRequestId({
+          runKey, index: index + 1, kind: "permission", workspaceId: actor.workspaceId,
+          input: item.reference,
+        })
       );
       item.requestId = String(requested.requestId || "");
       item.requester = step.actor;
@@ -345,7 +368,9 @@ export async function runSeamlessCapabilityScenarioObject(rawScenario, {
           graphSnapshot: actor.graphStore.getSnapshot(),
           sentence: step.input,
           fetchImpl: authenticatedFetch(actor.stateStore, fetchImpl),
-          requestId: `seamless-compute-${index + 1}`,
+          requestId: scenarioRequestId({
+            runKey, index: index + 1, kind: "compute", workspaceId: actor.workspaceId, input: step.input,
+          }),
         }
       );
       if (!execution.ok || execution.clarification) {
