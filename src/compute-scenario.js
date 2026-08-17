@@ -363,6 +363,10 @@ export function computePath(manifest, operation, { contextBindingHints = {}, ref
           contextBindingHints,
           referentMemory,
           outputs: operation.outputs || [],
+          execution: {
+            readOnly: manifest.execution?.readOnly === true,
+            timeoutMs: Number(manifest.execution?.timeoutMs || 0),
+          },
           protectedAssetRequirements: operation.protectedAssetRequirements || [],
           freshness: operation.freshness || { mode: "none", ttlSeconds: 0 },
           answerTemplate: operation.answerTemplate,
