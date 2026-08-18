@@ -49,6 +49,26 @@
       }
     },
     {
+      "type": "invoke",
+      "name": "wash Toyota after it is clean",
+      "input": "Wash my Toyota",
+      "subjectValue": "Toyota",
+      "expect": {
+        "answer": "Your Toyota is clean",
+        "mutationCount": 0
+      }
+    },
+    {
+      "type": "invoke",
+      "name": "wash car after it is clean",
+      "input": "Wash my car",
+      "subjectValue": "car",
+      "expect": {
+        "answer": "Your car is clean",
+        "mutationCount": 0
+      }
+    },
+    {
       "type": "essence",
       "name": "read Camry status",
       "input": "What is the status of my Camry",
