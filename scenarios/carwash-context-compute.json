@@ -1,0 +1,65 @@
+{
+  "name": "Carwash compute reads and updates ordinary ContextDB entities",
+  "setup": [
+    {
+      "name": "store car ownership",
+      "input": "I have a car",
+      "expect": { "kind": "statement" }
+    },
+    {
+      "name": "store car make and model",
+      "input": "My car is a Toyota Camry",
+      "expect": { "kind": "statement" }
+    },
+    {
+      "name": "store dirty car state",
+      "input": "My Toyota Camry is dirty.",
+      "expect": { "kind": "statement" }
+    }
+  ],
+  "build": {
+    "requirementSegments": [
+      "Build me a carwash app that will clean my car.",
+      "I can say, \"wash my car\", \"wash my camry\" or \"wash my toyota\".",
+      "It will switch my car from dirty to clean.",
+      "It will respond \"Your car is clean\", \"Your Camry is clean\" or \"Your Toyota is clean\".",
+      "It will update the status from dirty to clean."
+    ],
+    "expectContextEffect": {
+      "type": "contextdb.replace_object",
+      "currentValue": "dirty"
+    },
+    "expectUtterances": ["wash my car", "wash my camry", "wash my toyota"],
+    "expectAnnotatedUtterances": true
+  },
+  "steps": [
+    {
+      "type": "invoke",
+      "name": "wash Camry",
+      "input": "Wash my Camry",
+      "subjectValue": "Camry",
+      "expect": {
+        "answer": "Your Camry is clean",
+        "mutationCount": 2
+      }
+    },
+    {
+      "type": "essence",
+      "name": "read Camry status",
+      "input": "What is the status of my Camry",
+      "expect": {
+        "kind": "question",
+        "answer": ["clean"]
+      }
+    },
+    {
+      "type": "essence",
+      "name": "check Toyota condition",
+      "input": "Is my Toyota clean or dirty?",
+      "expect": {
+        "kind": "question",
+        "answer": ["clean"]
+      }
+    }
+  ]
+}

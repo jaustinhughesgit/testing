@@ -21,6 +21,27 @@ function unwrap(value) {
   return current;
 }
 
+function boundedDiagnostic(value) {
+  try { return JSON.stringify(value).slice(0, 4_000); }
+  catch { return String(value); }
+}
+
+function convertFailureDiagnostic(result) {
+  return boundedDiagnostic({
+    keys: result && typeof result === "object" ? Object.keys(result) : [],
+    error: result?.error || null,
+    errorDetails: result?.errorDetails || null,
+    diagnostics: result?.diagnostics || null,
+    build: result?.build ? {
+      status: result.build.status || null,
+      error: result.build.error || null,
+      errorDetails: result.build.errorDetails || null,
+      diagnostics: result.build.diagnostics || null,
+      failure: result.build.failure || null,
+    } : null,
+  });
+}
+
 function findManifest(value, seen = new Set()) {
   if (!value || typeof value !== "object" || seen.has(value)) return null;
   seen.add(value);
@@ -55,7 +76,7 @@ export function selectReusableCapabilityManifest(value, status) {
   return selectCapabilityManifest(value);
 }
 
-function requirementEnvelope(segments) {
+function requirementEnvelope(segments, authoringContext = null) {
   const normalized = segments.map((segment, index) => {
     const text = String(segment || "").replace(/\s+/g, " ").trim();
     if (!text) throw new Error(`Convert segment ${index + 1} is empty`);
@@ -67,6 +88,7 @@ function requirementEnvelope(segments) {
     userRequest: normalized.join("\n"),
     requirementSegments: normalized,
     relevantItems: [],
+    ...(authoringContext ? { authoringContext } : {}),
   };
 }
 
@@ -83,7 +105,7 @@ async function callConvert(client, workspaceId, body, { retries = 4 } = {}) {
 }
 
 export async function buildCapability(client, workspaceId, build, progress = () => {}) {
-  const prompt = requirementEnvelope(build.requirementSegments || []);
+  const prompt = requirementEnvelope(build.requirementSegments || [], build.authoringContext || null);
   let discoveryJobId = null;
   let capabilityRequest = null;
   let blueprintId = "entity.declarative.remote.v1";
@@ -107,7 +129,9 @@ export async function buildCapability(client, workspaceId, build, progress = () 
     if (status !== "CAPABILITY_BUILD_REQUIRED") {
       const manifest = selectReusableCapabilityManifest(result, status);
       if (manifest) return { result, manifest, prompt };
-      throw new Error(`Convert discovery stopped with ${status || "an unknown status"}`);
+      throw new Error(
+        `Convert discovery stopped with ${status || "an unknown status"}: ${convertFailureDiagnostic(result)}`
+      );
     }
     capabilityRequest = result?.build?.capabilityRequest;
     blueprintId = String(result?.computeDiscovery?.buildCommand?.blueprintId || blueprintId);
@@ -159,7 +183,9 @@ export async function buildCapability(client, workspaceId, build, progress = () 
       continue;
     }
     const manifest = selectCapabilityManifest(result);
-    if (!manifest) throw new Error(`Convert build stopped with ${status || "an unknown status"}`);
+    if (!manifest) {
+      throw new Error(`Convert build stopped with ${status || "an unknown status"}: ${convertFailureDiagnostic(result)}`);
+    }
     return { result, manifest, prompt, capabilityRequest };
   }
   throw new Error("Convert build exceeded its bounded polling window");
@@ -363,6 +389,7 @@ export function computePath(manifest, operation, { contextBindingHints = {}, ref
           contextBindingHints,
           referentMemory,
           outputs: operation.outputs || [],
+          contextEffects: operation.contextEffects || [],
           execution: {
             readOnly: manifest.execution?.readOnly === true,
             timeoutMs: Number(manifest.execution?.timeoutMs || 0),
@@ -399,15 +426,82 @@ export async function runComputeScenarioObject(scenario, {
   const workspaceId = String(stateStore.load().subdomain || "");
   if (!workspaceId) throw new Error("The selected profile has no workspace; run account bootstrap first");
   const graphStore = await loadPublishedGraphStore(websiteUrl, fetchImpl);
-  const built = await buildCapability(client, workspaceId, scenario.build || {}, progress);
-  const runtime = await loadComputeRuntime(websiteUrl, fetchImpl);
   const semanticPaths = await loadPublishedSemanticPathRuntime(websiteUrl, fetchImpl);
+  const setupResults = [];
+  for (const [index, step] of (scenario.setup || []).entries()) {
+    const result = step.execution === "published-semantic-path"
+      ? semanticPaths.execute(step.equationId, step.input, graphStore)
+      : await executeMessageStep(step, { websiteUrl, fetchImpl, graphStore, index });
+    if (step.expect?.kind && result.kind !== step.expect.kind) {
+      throw new Error(`Expected setup Essence kind ${step.expect.kind}, received ${result.kind}`);
+    }
+    setupResults.push({ type: "essence", ...result });
+  }
+  const build = {
+    ...(scenario.build || {}),
+    authoringContext: scenario.build?.authoringContext || (setupResults.length ? {
+      schemaVersion: 1,
+      kind: "convertAuthoringContext",
+      recentInputs: setupResults.slice(-20).map((result) => ({
+        text: result.input,
+        inputKind: result.kind,
+        semanticEntity: null,
+      })),
+      essence: setupResults.flatMap((result) => result.essence || []).slice(-120),
+    } : null),
+  };
+  const built = await buildCapability(client, workspaceId, build, progress);
+  const runtime = await loadComputeRuntime(websiteUrl, fetchImpl);
   const operationId = String(scenario.build?.operationId || built.manifest.operations?.[0]?.operationId || "");
   const operation = built.manifest.operations?.find((item) => item.operationId === operationId);
   if (!operation) throw new Error(`Built manifest omitted operation ${operationId}`);
+  if (scenario.build?.expectContextEffect) {
+    const expected = scenario.build.expectContextEffect;
+    const matched = (operation.contextEffects || []).some((effect) =>
+      Object.entries(expected).every(([name, value]) => String(effect?.[name]) === String(value))
+    );
+    if (!matched) {
+      throw new Error(`Built manifest omitted expected ContextDB effect ${JSON.stringify(expected)}; received ${JSON.stringify(operation.contextEffects || [])}`);
+    }
+  }
+  if (Array.isArray(scenario.build?.expectUtterances)) {
+    const normalizeUtterance = (value) => String(value || "")
+      .toLowerCase().replace(/[.!?]+$/g, "").replace(/\s+/g, " ").trim();
+    for (const expected of scenario.build.expectUtterances) {
+      const example = (operation.utteranceExamples || []).find((candidate) =>
+        normalizeUtterance(typeof candidate === "string" ? candidate : candidate?.text)
+          === normalizeUtterance(expected)
+      );
+      if (!example) {
+        throw new Error(`Built manifest omitted required invocation ${JSON.stringify(expected)}`);
+      }
+      if (scenario.build.expectAnnotatedUtterances === true) {
+        const requiredNames = (operation.inputs || []).filter((input) =>
+          input?.required !== false && String(input?.bindingHint?.source || "").toLowerCase() === "utterance"
+        ).map((input) => input.name);
+        const missing = requiredNames.filter((name) =>
+          typeof example !== "object" || !Object.prototype.hasOwnProperty.call(example.inputs || {}, name)
+        );
+        if (missing.length) {
+          throw new Error(`Invocation ${JSON.stringify(expected)} omitted required input annotation(s): ${missing.join(", ")}`);
+        }
+      }
+    }
+  }
   const path = computePath(built.manifest, operation);
   const transport = authenticatedFetch(stateStore, fetchImpl);
-  const results = [];
+  const results = [...setupResults];
+
+  const exampleInputs = (input) => {
+    const key = String(input || "").toLowerCase().replace(/[.!?]+$/g, "").replace(/\s+/g, " ").trim();
+    const example = (operation.utteranceExamples || []).find((candidate) => {
+      const text = typeof candidate === "string" ? candidate : candidate?.text;
+      return String(text || "").toLowerCase().replace(/[.!?]+$/g, "").replace(/\s+/g, " ").trim() === key;
+    });
+    return example && typeof example === "object" && !Array.isArray(example)
+      ? { ...(example.inputs || {}) }
+      : {};
+  };
 
   for (const [index, step] of (scenario.steps || []).entries()) {
     if (step.type === "essence") {
@@ -422,13 +516,35 @@ export async function runComputeScenarioObject(scenario, {
       if (step.expect?.kind && result.kind !== step.expect.kind) {
         throw new Error(`Expected Essence kind ${step.expect.kind}, received ${result.kind}`);
       }
+      if (step.expect?.answer && JSON.stringify(result.answer || []) !== JSON.stringify(step.expect.answer)) {
+        throw new Error(
+          `Expected Essence answer ${JSON.stringify(step.expect.answer)}, received ${JSON.stringify(result.answer || [])}; `
+          + `essence ${JSON.stringify(result.essence || [])}`
+        );
+      }
+      if (step.expect?.responseSentence && result.responseSentence !== step.expect.responseSentence) {
+        throw new Error(
+          `Expected response sentence ${JSON.stringify(step.expect.responseSentence)}, received ${JSON.stringify(result.responseSentence || "")}`
+        );
+      }
       results.push({ type: "essence", ...result });
       continue;
     }
     if (step.type !== "invoke") throw new Error(`Scenario step ${index + 1} has unsupported type ${step.type}`);
+    const inputOverrides = { ...exampleInputs(step.input), ...(step.inputs || {}) };
+    if (step.subjectValue != null) {
+      const candidates = (operation.inputs || []).filter((input) =>
+        input?.required !== false && String(input?.bindingHint?.source || '').toLowerCase() === 'utterance'
+      );
+      if (candidates.length !== 1) {
+        throw new Error(`subjectValue requires exactly one required utterance input, received ${candidates.length}`);
+      }
+      inputOverrides[candidates[0].name] = step.subjectValue;
+    }
     const execution = await runtime.invokeComputePath(path, {
       graphSnapshot: graphStore.getSnapshot(),
       sentence: String(step.input || ""),
+      inputOverrides,
       fetchImpl: transport,
       requestId: `command-scenario-${index + 1}`,
     });
@@ -445,6 +561,13 @@ export async function runComputeScenarioObject(scenario, {
         throw new Error(`Expected resolved input ${JSON.stringify(step.expect.input)}, received ${JSON.stringify(binding)}`);
       }
     }
+    if (step.expect?.mutationCount != null && execution.mutationOps?.length !== Number(step.expect.mutationCount)) {
+      throw new Error(`Expected ${step.expect.mutationCount} mutation operations, received ${execution.mutationOps?.length || 0}`);
+    }
+    if (execution.mutationOps?.length) {
+      const applied = graphStore.applyMutationOps(execution.mutationOps);
+      if (!applied?.ok) throw new Error(`Context effect application failed: ${JSON.stringify(applied?.errors || [])}`);
+    }
     results.push({
       type: "invoke",
       input: step.input,
@@ -452,6 +575,8 @@ export async function runComputeScenarioObject(scenario, {
       inputBindings: execution.computePlan?.inputBindings || [],
       entityId: built.manifest.entityId,
       capabilityId: built.manifest.capabilityId,
+      mutationOps: execution.mutationOps || [],
+      contextEffects: execution.contextEffects || [],
     });
   }
 
@@ -462,6 +587,7 @@ export async function runComputeScenarioObject(scenario, {
     capabilityId: built.manifest.capabilityId,
     entityId: built.manifest.entityId,
     requirementSegments: built.prompt.requirementSegments,
+    graph: graphStore.getSnapshot(),
     results,
   };
 }
