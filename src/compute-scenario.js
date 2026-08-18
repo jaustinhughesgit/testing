@@ -184,7 +184,14 @@ export async function buildCapability(client, workspaceId, build, progress = () 
     }
     const manifest = selectCapabilityManifest(result);
     if (!manifest) {
-      throw new Error(`Convert build stopped with ${status || "an unknown status"}: ${convertFailureDiagnostic(result)}`);
+      const contractEffects = (capabilityRequest?.operations || []).map((operation) => ({
+        operationId: operation.operationId,
+        contextEffects: operation.contextEffects || [],
+      }));
+      throw new Error(
+        `Convert build stopped with ${status || "an unknown status"}: ${convertFailureDiagnostic(result)}; `
+        + `contract effects ${boundedDiagnostic(contractEffects)}`
+      );
     }
     return { result, manifest, prompt, capabilityRequest };
   }
