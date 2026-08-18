@@ -554,7 +554,10 @@ export async function runComputeScenarioObject(scenario, {
         input?.required !== false && String(input?.bindingHint?.source || '').toLowerCase() === 'utterance'
       );
       if (candidates.length !== 1) {
-        throw new Error(`subjectValue requires exactly one required utterance input, received ${candidates.length}`);
+        throw new Error(
+          `subjectValue requires exactly one required utterance input, received ${candidates.length}: `
+          + boundedDiagnostic(candidates)
+        );
       }
       inputOverrides[candidates[0].name] = step.subjectValue;
     }
@@ -569,7 +572,8 @@ export async function runComputeScenarioObject(scenario, {
     if (step.expect?.answer && execution.answer !== step.expect.answer) {
       throw new Error(
         `Expected answer ${JSON.stringify(step.expect.answer)}, received ${JSON.stringify(execution.answer)}; `
-        + `plan ${JSON.stringify(execution.computePlan)}; graph ${JSON.stringify(graphStore.getSnapshot())}`
+        + `plan ${JSON.stringify(execution.computePlan)}; operation ${boundedDiagnostic(operation)}; `
+        + `graph ${JSON.stringify(graphStore.getSnapshot())}`
       );
     }
     if (step.expect?.input) {
