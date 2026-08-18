@@ -30,7 +30,12 @@
       "currentValue": "dirty"
     },
     "expectUtterances": ["wash my car", "wash my camry", "wash my toyota"],
-    "expectAnnotatedUtterances": true
+    "expectAnnotatedUtterances": true,
+    "expectUtteranceValues": {
+      "wash my car": "car",
+      "wash my camry": "camry",
+      "wash my toyota": "toyota"
+    }
   },
   "steps": [
     {

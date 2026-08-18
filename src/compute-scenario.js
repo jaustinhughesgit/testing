@@ -492,6 +492,16 @@ export async function runComputeScenarioObject(scenario, {
         if (missing.length) {
           throw new Error(`Invocation ${JSON.stringify(expected)} omitted required input annotation(s): ${missing.join(", ")}`);
         }
+        const expectedValue = scenario.build.expectUtteranceValues?.[expected];
+        if (expectedValue != null && requiredNames.length === 1) {
+          const actualValue = example.inputs?.[requiredNames[0]];
+          if (String(actualValue).toLowerCase() !== String(expectedValue).toLowerCase()) {
+            throw new Error(
+              `Invocation ${JSON.stringify(expected)} expected ${requiredNames[0]}=${JSON.stringify(expectedValue)}, `
+              + `received ${JSON.stringify(actualValue)}`
+            );
+          }
+        }
       }
     }
   }
