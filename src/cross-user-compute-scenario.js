@@ -185,6 +185,16 @@ export async function pollCapabilityPublication(inspect, {
   return publication;
 }
 
+export function assertFreshCapabilityBuild(result) {
+  const status = String(result?.build?.status || "");
+  if (status !== "BUILT_AND_REGISTERED") {
+    throw new Error(
+      `Clean-start sharing proof requires a newly built capability, received ${status || "unknown"}`
+    );
+  }
+  return status;
+}
+
 async function actor(config, profile) {
   const stateStore = new StateStore(config.stateDirectory, profile);
   const state = stateStore.load();
@@ -274,6 +284,7 @@ export async function runCrossUserComputeScenarioObject(scenario, {
       essence: authorSetup.flatMap((result) => result.essence || []).slice(-120),
     },
   }, progress);
+  const authorBuildStatus = assertFreshCapabilityBuild(built.result);
   const authorOperation = findOperation(built.manifest, scenario.author.build.operationId);
   if (!authorOperation) throw new Error("Author manifest omitted its requested operation");
   if (!authorOperation.entityDependencies?.length) {
@@ -330,6 +341,8 @@ export async function runCrossUserComputeScenarioObject(scenario, {
     name: scenario.name,
     passed: scenario.author.setup.length + scenario.author.steps.length + scenario.installer.setup.length + 3,
     capability: {
+      cleanStart: true,
+      authorBuildStatus,
       entityId: built.manifest.entityId,
       capabilityId: built.manifest.capabilityId,
       version: built.manifest.version,

@@ -8,6 +8,7 @@ import {
   loadPublishedSemanticPathRuntime,
 } from "../src/compute-scenario.js";
 import {
+  assertFreshCapabilityBuild,
   ordinaryEvidence,
   operationSubjectInput,
   pollCapabilityPublication,
@@ -81,6 +82,17 @@ test("the sharing runner waits for bounded Position propagation after registrati
   assert.equal(calls, 3);
   assert.equal(publication.positionAvailable, true);
   assert.equal(publication.canUse, true);
+});
+
+test("the reset-gated sharing proof rejects a retained functional capability", () => {
+  assert.equal(
+    assertFreshCapabilityBuild({ build: { status: "BUILT_AND_REGISTERED" } }),
+    "BUILT_AND_REGISTERED"
+  );
+  assert.throws(
+    () => assertFreshCapabilityBuild({ build: { status: "CAPABILITY_REUSED" } }),
+    /requires a newly built capability/
+  );
 });
 
 test("the non-protected two-user carwash flow updates only the exact installed entity binding", async () => {
