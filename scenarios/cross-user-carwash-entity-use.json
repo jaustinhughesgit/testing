@@ -23,10 +23,11 @@
     ],
     "build": {
       "requirementSegments": [
-        "Build me a carwash app that will clean my car.",
-        "I can say, \"wash my car\", \"wash my camry\" or \"wash my toyota\".",
+        "Build me a car wash app that will clean my car.",
+        "I can say wash my car, wash my Camry, or wash my Toyota, or wash my Toyota Camry.",
+        "I should be able to use any car, not just a Toyota Camry.",
         "It will switch my car from dirty to clean.",
-        "It will respond \"Your car is clean\", \"Your Camry is clean\" or \"Your Toyota is clean\".",
+        "It will respond, Your car is clean, your Camry is clean, your Toyota Camry is clean, whichever is correct.",
         "It will update the status from dirty to clean."
       ]
     },
@@ -64,30 +65,35 @@
   "installer": {
     "setup": [
       {
-        "name": "User 2 owns a car",
-        "input": "I have a car.",
+        "name": "User 2 owns a truck",
+        "input": "I have a truck.",
         "equationId": "activity_possession_composed_statement"
       },
       {
+        "name": "User 2 names the truck",
+        "input": "My truck is a Ford F150.",
+        "equationId": "owned_entity_alias_composed_statement"
+      },
+      {
         "name": "User 2 records the dirty condition",
-        "input": "My car is dirty.",
+        "input": "My Ford F150 is dirty.",
         "equationId": "self_property_composed_statement"
       }
     ],
     "invoke": {
       "name": "User 2 discovers and washes with User 1's app",
-      "input": "Wash my car.",
-      "subjectValue": "car",
+      "input": "Wash my Ford F150.",
+      "subjectValue": "Ford F150",
       "requestId": "cross-user-carwash-installer-wash",
-      "expect": { "answer": "Your car is clean" }
+      "expect": { "answer": "Your Ford F150 is clean" }
     },
     "verify": {
-      "name": "User 2 reads the updated car status",
-      "input": "What is the status of my car",
+      "name": "User 2 reads the updated truck status",
+      "input": "What is the status of my F150",
       "equationId": "owned_entity_status_composed_query",
       "expect": {
         "answer": ["clean"],
-        "responseSentence": "The status of your Car is clean."
+        "responseSentence": "The status of your F150 is clean."
       }
     }
   }
