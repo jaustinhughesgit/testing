@@ -8,6 +8,7 @@ import {
   loadPublishedSemanticPathRuntime,
 } from "../src/compute-scenario.js";
 import {
+  ordinaryEvidence,
   operationSubjectInput,
   pollCapabilityPublication,
 } from "../src/cross-user-compute-scenario.js";
@@ -178,6 +179,11 @@ test("the non-protected two-user carwash flow updates only the exact installed e
   ));
   assert.ok(carCondition);
   assert.ok(registerStatus);
+  assert.equal(
+    ordinaryEvidence(["I have a car.", "My car is dirty.", "Wash my car."], before)
+      .invocationReferents[0].entityId,
+    carId
+  );
 
   const bindings = [{
     schemaVersion: 1,

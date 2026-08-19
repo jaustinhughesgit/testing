@@ -22,7 +22,7 @@ function assertEqual(actual, expected, label) {
   }
 }
 
-function ordinaryEvidence(history, graph) {
+export function ordinaryEvidence(history, graph) {
   const entities = Object.values(graph?.entities || {}).filter((entity) => {
     const labels = [...(entity?.names || []), ...(entity?.lemmas || [])];
     return entity?.protected !== true
@@ -45,12 +45,23 @@ function ordinaryEvidence(history, graph) {
     obj: String(relation.obj),
   }));
   const invocationText = String(history.at(-1) || "").toLowerCase();
+  const speakerCandidates = (graph?.mentions?.speaker?.entities || [])
+    .map(String).filter((entityId) => entityIds.has(entityId));
+  const speakerId = speakerCandidates.length === 1 ? speakerCandidates[0] : "";
   const resolvedMention = Object.entries(graph?.mentions || {})
-    .filter(([mention, record]) => (
-      invocationText.includes(String(mention).toLowerCase())
-      && Array.isArray(record?.entities)
-      && record.entities.length === 1
-      && entityIds.has(String(record.entities[0]))
+    .map(([mention, record]) => {
+      const candidates = (Array.isArray(record?.entities) ? record.entities : [])
+        .map(String).filter((entityId) => entityIds.has(entityId));
+      const owned = speakerId ? candidates.filter((entityId) => relations.some(
+        (relation) => relation.subj === speakerId && relation.obj === entityId
+      )) : [];
+      const resolved = owned.length === 1
+        ? owned[0]
+        : (candidates.length === 1 ? candidates[0] : "");
+      return [mention, resolved];
+    })
+    .filter(([mention, entityId]) => (
+      entityId && invocationText.includes(String(mention).toLowerCase())
     ))
     .sort((left, right) => right[0].length - left[0].length)[0];
   return {
@@ -60,7 +71,7 @@ function ordinaryEvidence(history, graph) {
       role: "qualified_owner",
       mention: resolvedMention[0],
       mentionKey: resolvedMention[0],
-      entityId: String(resolvedMention[1].entities[0]),
+      entityId: String(resolvedMention[1]),
       resolvedLocally: true,
       resolution: "contextdb_exact",
     }] : [],
