@@ -59,6 +59,22 @@
           "answer": ["clean"],
           "responseSentence": "Your Toyota is clean."
         }
+      },
+      {
+        "type": "essence",
+        "name": "User 1 marks the washed Camry dirty again",
+        "input": "My Toyota Camry is dirty.",
+        "equationId": "self_property_composed_statement"
+      },
+      {
+        "type": "essence",
+        "name": "User 1 reads only the corrected Camry status",
+        "input": "What is the status of my Camry",
+        "equationId": "owned_entity_status_composed_query",
+        "expect": {
+          "answer": ["dirty"],
+          "responseSentence": "The status of your Camry is dirty."
+        }
       }
     ]
   },
