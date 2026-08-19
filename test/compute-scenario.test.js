@@ -135,6 +135,32 @@ test("owned entity aliases and condition queries retain one ContextDB identity",
   const graphStore = await loadPublishedGraphStore("https://website.example", fetchImpl);
 
   runtime.execute("activity_possession_composed_statement", "I have a car.", graphStore);
+  const local = graphStore.getSnapshot();
+  const idMap = Object.fromEntries(Object.keys(local.entities).map((entityId) => {
+    const entity = local.entities[entityId];
+    if (entity.lemmas?.includes("speaker")) return [entityId, "usr_1"];
+    const usedAsPredicate = Object.values(local.relations).some((relation) => relation.prop === entityId);
+    return [entityId, `${usedAsPredicate ? "term" : "ctx"}_${entityId}`];
+  }));
+  graphStore.loadSnapshot({
+    entities: Object.fromEntries(Object.entries(local.entities).map(([entityId, entity]) => [
+      idMap[entityId],
+      { ...entity, id: idMap[entityId] },
+    ])),
+    relations: Object.fromEntries(Object.entries(local.relations).map(([relationId, relation]) => [
+      relationId,
+      {
+        ...relation,
+        subj: idMap[relation.subj],
+        prop: idMap[relation.prop],
+        obj: idMap[relation.obj],
+      },
+    ])),
+    mentions: Object.fromEntries(Object.entries(local.mentions).map(([mention, value]) => [
+      mention,
+      { entities: value.entities.map((entityId) => idMap[entityId]) },
+    ])),
+  });
   runtime.execute("owned_entity_alias_composed_statement", "My car is a Toyota Camry.", graphStore);
   runtime.execute("self_property_composed_statement", "My Toyota Camry is dirty.", graphStore);
 

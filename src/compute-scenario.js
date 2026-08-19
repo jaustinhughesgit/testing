@@ -5,6 +5,7 @@
 import fs from "node:fs";
 import vm from "node:vm";
 import { executeMessageStep, loadPublishedGraphStore } from "./message-scenario.js";
+import { loadPublishedContextPublication, publishDelta } from "./context-publication.js";
 
 const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
@@ -508,8 +509,14 @@ export async function runComputeScenarioObject(scenario, {
   if (!workspaceId) throw new Error("The selected profile has no workspace; run account bootstrap first");
   const graphStore = await loadPublishedGraphStore(websiteUrl, fetchImpl);
   const semanticPaths = await loadPublishedSemanticPathRuntime(websiteUrl, fetchImpl);
+  const publishSetupContext = (scenario.setup || []).some((step) => step.publishContext === true);
+  const contextPublication = publishSetupContext
+    ? await loadPublishedContextPublication(websiteUrl, fetchImpl)
+    : null;
+  const publicationActor = { client, workspaceId, graphStore };
   const setupResults = [];
   for (const [index, step] of (scenario.setup || []).entries()) {
+    const before = graphStore.getSnapshot();
     const result = step.execution === "published-semantic-path"
       ? semanticPaths.execute(step.equationId, step.input, graphStore)
       : await executeMessageStep(step, { websiteUrl, fetchImpl, graphStore, index });
@@ -519,7 +526,13 @@ export async function runComputeScenarioObject(scenario, {
     if (step.expect?.execution && result.execution !== step.expect.execution) {
       throw new Error(`Expected setup execution ${step.expect.execution}, received ${result.execution}`);
     }
-    setupResults.push({ type: "essence", ...result });
+    const publication = step.publishContext === true
+      ? await publishDelta(publicationActor, before, graphStore.getSnapshot(), {
+          requestId: `compute-setup-v1-${workspaceId}-${index + 1}`,
+          sentence: String(step.input || ""),
+        }, contextPublication)
+      : null;
+    setupResults.push({ type: "essence", ...result, ...(publication ? { publication } : {}) });
   }
   const build = {
     ...(scenario.build || {}),

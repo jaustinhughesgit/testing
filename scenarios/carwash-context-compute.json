@@ -6,6 +6,7 @@
       "input": "I have a car",
       "execution": "published-semantic-path",
       "equationId": "activity_possession_composed_statement",
+      "publishContext": true,
       "expect": {
         "kind": "statement",
         "execution": "published-semantic-path"
