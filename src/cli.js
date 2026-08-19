@@ -79,6 +79,25 @@ export async function resetDatabase(client, environmentId, { retries = 4, wait =
   return result;
 }
 
+export async function bootstrapProfileAfterReset(config, profile) {
+  const state = new StateStore(config.stateDirectory, profile);
+  // Canonical reset removed the account that owned any prior token and
+  // workspace. Start this named test identity as a genuinely new user so the
+  // scenario cannot pass with retained entities or Paths.
+  state.save({});
+  const client = new OneVarApiClient({ ...config, stateStore: state });
+  const bootstrap = await client.call("newGroup", {
+    path: ["newUser", "newUser"],
+    body: {},
+  });
+  const account = bootstrap.data?.response ?? bootstrap.data;
+  if (!account?.entity || !account?.file) {
+    throw new Error(`Profile ${profile} could not be bootstrapped after reset`);
+  }
+  state.update({ userId: account.entity, subdomain: account.file });
+  return { profile, userId: String(account.entity), subdomain: String(account.file) };
+}
+
 export async function main(argv = process.argv.slice(2)) {
   const { positional, flags } = parseArgs(argv);
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -126,6 +145,8 @@ export async function main(argv = process.argv.slice(2)) {
     if (before?.ok === false || before?.response?.alert !== "success") {
       throw new Error("Pre-run database reset was rejected or incomplete");
     }
+    const resetProfiles = profileNames.split(",").map((value) => value.trim()).filter(Boolean);
+    for (const profile of resetProfiles) await bootstrapProfileAfterReset(config, profile);
     let result;
     let runError;
     try {

@@ -397,20 +397,20 @@ export async function loadPublishedSemanticPathRuntime(websiteUrl, fetchImpl) {
       if (binding.value === "existingRelatedEntity" && typeof graphStore.getSnapshot !== "function") return "";
       const graph = graphStore.getSnapshot();
       const candidates = (graph.mentions?.[value]?.entities || []).filter((entityId) => graph.entities?.[entityId]);
+      if (binding.value === "existingRelatedEntity") {
+        const subjectCandidates = (graph.mentions?.speaker?.entities || [])
+          .filter((entityId) => graph.entities?.[entityId]);
+        const subjectId = subjectCandidates.length === 1 ? subjectCandidates[0] : "";
+        const related = subjectId ? candidates.filter((entityId) => Object.values(graph.relations || {}).some(
+          (relation) => relation.subj === subjectId && relation.obj === entityId
+        )) : [];
+        return related.length === 1 ? related[0] : "";
+      }
       const exactNames = candidates.filter((entityId) => (
         graph.entities[entityId].names || []
       ).some((name) => String(name).toLowerCase() === value));
       const resolved = exactNames.length === 1 ? exactNames[0] : (candidates.length === 1 ? candidates[0] : "");
-      if (resolved && binding.value === "existingRelatedEntity") {
-        const subjectCandidates = (graph.mentions?.speaker?.entities || [])
-          .filter((entityId) => graph.entities?.[entityId]);
-        const subjectId = subjectCandidates.length === 1 ? subjectCandidates[0] : "";
-        return subjectId && Object.values(graph.relations || {}).some((relation) => (
-          relation.subj === subjectId && relation.obj === resolved
-        )) ? resolved : "";
-      }
       if (resolved) return resolved;
-      if (binding.value === "existingRelatedEntity") return "";
     }
     return value;
   };

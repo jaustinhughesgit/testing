@@ -145,7 +145,11 @@ test("the non-protected two-user carwash flow updates only the exact installed e
   semanticPaths.execute("self_property_composed_statement", "My car is dirty.", user2);
   semanticPaths.execute("self_property_composed_statement", "My register status is dirty.", user2);
   const before = user2.getSnapshot();
-  const carId = entityId(before, "car");
+  const speakerId = entityId(before, "speaker");
+  const carId = Object.values(before.relations).find((relation) => (
+    relation.subj === speakerId
+    && before.entities[relation.obj]?.lemmas?.includes("car")
+  ))?.obj;
   const carCondition = Object.values(before.relations).find((relation) => (
     relation.subj === carId
     && before.entities[relation.obj]?.lemmas?.includes("dirty")

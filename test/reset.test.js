@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { resetDatabase } from "../src/cli.js";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { bootstrapProfileAfterReset, resetDatabase } from "../src/cli.js";
 
 test("follows reset continuations until the server reports success", async () => {
   const bodies = [];
@@ -38,4 +41,38 @@ test("retries a transient gateway failure without dropping continuation state", 
   const result = await resetDatabase(client, "test", { wait: (resolve) => resolve() });
   assert.equal(result.response.alert, "success");
   assert.equal(calls, 2);
+});
+
+test("a reset-enveloped run bootstraps a genuinely new named user", async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "onevar-reset-profile-"));
+  const calls = [];
+  const config = {
+    stateDirectory: directory,
+    apiUrl: "https://api.example.test/cookies",
+    originalHost: "https://api.example.test",
+    fetchImpl: async (_url, options) => {
+      calls.push(options);
+      return new Response(JSON.stringify({
+        response: { oai: { html: { response: { entity: "u:new", file: "workspace-new" } } } },
+      }), {
+        status: 200,
+        headers: { "content-type": "application/json", "set-cookie": "accessToken=fresh-token; Path=/" },
+      });
+    },
+  };
+  fs.writeFileSync(path.join(directory, "author.json"), JSON.stringify({
+    accessToken: "stale-token",
+    subdomain: "old-workspace",
+  }));
+
+  const result = await bootstrapProfileAfterReset(config, "author");
+  const stored = JSON.parse(fs.readFileSync(path.join(directory, "author.json"), "utf8"));
+
+  assert.deepEqual(result, { profile: "author", userId: "u:new", subdomain: "workspace-new" });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].headers.Cookie, undefined);
+  assert.equal(stored.accessToken, "fresh-token");
+  assert.equal(stored.subdomain, "workspace-new");
+  assert.equal(stored.userId, "u:new");
+  fs.rmSync(directory, { recursive: true, force: true });
 });
