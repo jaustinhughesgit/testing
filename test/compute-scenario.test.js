@@ -192,6 +192,31 @@ test("owned entity aliases and condition queries retain one ContextDB identity",
     ["dirty"],
   );
 
+  const beforeCorrection = graphStore.getSnapshot();
+  const carCondition = Object.values(beforeCorrection.relations).find((relation) => (
+    relation.subj === carId
+    && beforeCorrection.entities[relation.prop]?.lemmas?.includes("condition")
+  ));
+  const cleanId = graphStore.ensureEntity("clean");
+  graphStore.applyMutationOps([{
+    type: "relation:rewire",
+    payload: { relationId: carCondition.id, obj: cleanId },
+  }]);
+  runtime.execute("self_property_composed_statement", "My Toyota Camry is dirty.", graphStore);
+  const corrected = graphStore.getSnapshot();
+  const correctedConditions = Object.values(corrected.relations).filter((relation) => (
+    relation.subj === carId
+    && corrected.entities[relation.prop]?.lemmas?.includes("condition")
+  ));
+  assert.equal(correctedConditions.length, 1);
+  assert.equal(correctedConditions[0].id, carCondition.id);
+  assert.equal(corrected.entities[correctedConditions[0].obj]?.lemmas?.includes("dirty"), true);
+  assert.equal(corrected.mentions.dirty.entities.length, 1);
+  assert.deepEqual(
+    runtime.execute("owned_entity_status_composed_query", "What is the status of my Camry?", graphStore).answer,
+    ["dirty"],
+  );
+
   const personalStore = await loadPublishedGraphStore("https://website.example", fetchImpl);
   runtime.execute("self_property_composed_statement", "My register status is open.", personalStore);
   const repeatedProperty = runtime.execute(
@@ -204,6 +229,12 @@ test("owned entity aliases and condition queries retain one ContextDB identity",
     "present", "speaker", "register status", "closed",
   ]);
   const personal = personalStore.getSnapshot();
+  const registerValues = Object.values(personal.relations).filter((relation) => (
+    personal.entities[relation.subj]?.lemmas?.includes("speaker")
+    && personal.entities[relation.prop]?.lemmas?.includes("register_status")
+  ));
+  assert.equal(registerValues.length, 1);
+  assert.equal(personal.entities[registerValues[0].obj]?.lemmas?.includes("closed"), true);
   assert.equal(Object.values(personal.relations).some((relation) => (
     personal.entities[relation.subj]?.lemmas?.includes("register status")
     && personal.entities[relation.prop]?.lemmas?.includes("condition")

@@ -498,7 +498,9 @@ export async function loadPublishedSemanticPathRuntime(websiteUrl, fetchImpl) {
             throw new Error(`Published semantic Path ${equationId} transaction failed: ${JSON.stringify(applied?.errors || [])}`);
           }
         }
-        graphStore.ingestEssenceRows(rows);
+        graphStore.ingestEssenceRows(rows, {
+          writePolicy: path.right?.state?.writePolicy || null,
+        });
       }
       const resolveEntity = (value) => {
         const entity = graphStore.getSnapshot?.()?.entities?.[String(value || "")];
