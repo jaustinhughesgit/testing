@@ -7,6 +7,7 @@ import {
   loadComputeRuntime,
   loadPublishedSemanticPathRuntime,
 } from "../src/compute-scenario.js";
+import { operationSubjectInput } from "../src/cross-user-compute-scenario.js";
 import { loadPublishedGraphStore } from "../src/message-scenario.js";
 
 const awsPublic = path.resolve(import.meta.dirname, "../../aws/app/public");
@@ -51,6 +52,17 @@ function invokeFetch(manifest, operation) {
     }), { status: 200, headers: { "content-type": "application/json" } });
   };
 }
+
+test("the sharing runner uses the effect's exact generated subject input name", () => {
+  assert.equal(operationSubjectInput({
+    inputs: [{
+      name: "utterance",
+      required: true,
+      bindingHint: { source: "utterance", resolver: "entity_reference" },
+    }],
+    contextEffects: [{ subjectInput: "utterance" }],
+  }, "vehicle"), "utterance");
+});
 
 test("the non-protected two-user carwash flow updates only the exact installed entity binding", async () => {
   const semanticPaths = await loadPublishedSemanticPathRuntime("https://website.example", localFetch);

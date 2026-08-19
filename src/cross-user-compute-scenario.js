@@ -102,13 +102,33 @@ function executeEssence(actorState, semanticPaths, step) {
   return result;
 }
 
+export function operationSubjectInput(operation, requested = "") {
+  const inputs = new Set((operation?.inputs || []).map((input) => String(input?.name || "")).filter(Boolean));
+  const explicit = String(requested || "").trim();
+  if (explicit && inputs.has(explicit)) return explicit;
+  const effectSubjects = [...new Set((operation?.contextEffects || [])
+    .map((effect) => String(effect?.subjectInput || "").trim())
+    .filter((name) => name && inputs.has(name)))];
+  if (effectSubjects.length === 1) return effectSubjects[0];
+  const entityReferences = (operation?.inputs || []).filter((input) => (
+    input?.required !== false
+    && String(input?.bindingHint?.source || "").toLowerCase() === "utterance"
+    && ["entity", "entity_reference", "resolved_entity"].includes(
+      String(input?.bindingHint?.resolver || "").toLowerCase().replace(/[ -]+/g, "_")
+    )
+  ));
+  if (entityReferences.length === 1) return String(entityReferences[0].name);
+  throw new Error("The selected Compute operation does not expose one exact invocation subject input");
+}
+
 async function invoke(actorState, runtime, manifest, operation, step, entityUseBindings = []) {
+  const subjectInput = operationSubjectInput(operation, step.subjectInput);
   const execution = await runtime.invokeComputePath(
     computePath(manifest, operation, { entityUseBindings }),
     {
       graphSnapshot: actorState.graphStore.getSnapshot(),
       sentence: step.input,
-      inputOverrides: { [step.subjectInput || "vehicle"]: step.subjectValue },
+      inputOverrides: { [subjectInput]: step.subjectValue },
       fetchImpl: authenticatedFetch(actorState.stateStore, fetch),
       requestId: step.requestId,
     }
