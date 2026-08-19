@@ -17,6 +17,7 @@ import { runMessageScenario } from "./message-scenario.js";
 import { runComputeScenario } from "./compute-scenario.js";
 import { runCrossUserContextScenario } from "./cross-user-context-scenario.js";
 import { runSeamlessCapabilityScenario } from "./seamless-capability-scenario.js";
+import { runCrossUserComputeScenario } from "./cross-user-compute-scenario.js";
 
 function parseArgs(argv) {
   const positional = [];
@@ -110,6 +111,42 @@ export async function main(argv = process.argv.slice(2)) {
         `${index} ${name}${phase ? ` ${phase} ${poll}: ${status}` : ""}\n`
       ),
     }));
+    return;
+  }
+  if (area === "compute-sharing" && command === "run") {
+    requireWebsiteConfig(config);
+    if (!rest[0]) throw new Error("compute-sharing run requires a scenario file");
+    const profileNames = requireFlag(flags, "profiles");
+    const confirmation = requireFlag(flags, "reset");
+    const { environmentId } = assertResetAllowed(config, confirmation);
+    const resetProfile = profileNames.split(",").map((value) => value.trim()).filter(Boolean)[0];
+    const resetState = new StateStore(config.stateDirectory, resetProfile);
+    const resetClient = new OneVarApiClient({ ...config, stateStore: resetState });
+    const before = await resetDatabase(resetClient, environmentId);
+    if (before?.ok === false || before?.response?.alert !== "success") {
+      throw new Error("Pre-run database reset was rejected or incomplete");
+    }
+    let result;
+    let runError;
+    try {
+      result = await runCrossUserComputeScenario(path.resolve(process.cwd(), rest[0]), {
+        config,
+        profileNames,
+        progress: ({ phase, status, poll }) => process.stderr.write(`${phase} ${poll}: ${status}\n`),
+      });
+    } catch (error) {
+      runError = error;
+    }
+    const after = await resetDatabase(resetClient, environmentId).catch((error) => ({
+      ok: false,
+      error: { code: error?.code || "RESET_AFTER_FAILED", message: error?.message || String(error) },
+    }));
+    if (after?.ok === false || after?.response?.alert !== "success") {
+      if (runError) runError.message += "; final database reset also failed";
+      else throw new Error("Final database reset was rejected or incomplete");
+    }
+    if (runError) throw runError;
+    output({ ...result, resetBefore: true, resetAfter: true });
     return;
   }
   const state = new StateStore(config.stateDirectory, String(flags.profile || "default"));

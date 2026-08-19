@@ -199,6 +199,47 @@ export async function buildCapability(client, workspaceId, build, progress = () 
   throw new Error("Convert build exceeded its bounded polling window");
 }
 
+export async function discoverExistingCapability(
+  client,
+  workspaceId,
+  utterance,
+  semanticEvidence,
+  progress = () => {}
+) {
+  const prompt = {
+    schemaVersion: 1,
+    userRequest: String(utterance || "").trim(),
+    requirementSegments: [],
+    relevantItems: semanticEvidence ? [semanticEvidence] : [],
+  };
+  let discoveryJobId = null;
+  for (let poll = 0; poll < 90; poll += 1) {
+    const result = await callConvert(client, workspaceId, {
+      llmTemplateId: "original-v1",
+      prompt,
+      computeDiscovery: true,
+      discoveryOnly: true,
+      backgroundComputeDiscovery: true,
+      computeDiscoveryJobId: discoveryJobId,
+    });
+    const status = String(result?.build?.status || "");
+    progress({ phase: "reuse-discovery", status, poll: poll + 1 });
+    if (status === "DISCOVERY_PENDING") {
+      discoveryJobId = String(result?.build?.backgroundJob?.jobId || discoveryJobId || "");
+      if (!discoveryJobId) throw new Error("Reuse discovery omitted its job id");
+      await wait(Math.max(250, Number(result?.build?.backgroundJob?.retryAfterMs || 2_000)));
+      continue;
+    }
+    if (status !== "CAPABILITY_REUSED") {
+      throw new Error(`Expected CAPABILITY_REUSED, received ${status || "unknown"}: ${convertFailureDiagnostic(result)}`);
+    }
+    const manifest = selectCapabilityManifest(result);
+    if (!manifest) throw new Error("Reuse discovery omitted the exact capability manifest");
+    return { result, manifest, discovery: result.computeDiscovery || null, prompt };
+  }
+  throw new Error("Reuse discovery exceeded its bounded polling window");
+}
+
 export async function loadComputeRuntime(websiteUrl, fetchImpl) {
   const url = new URL("/workers/computeCapabilityWorkerLib.js", `${websiteUrl.replace(/\/+$/, "")}/`).toString();
   const response = await fetchImpl(url);
@@ -452,7 +493,9 @@ export async function loadPublishedSemanticPathRuntime(websiteUrl, fetchImpl) {
   };
 }
 
-export function computePath(manifest, operation, { contextBindingHints = {}, referentMemory = [] } = {}) {
+export function computePath(manifest, operation, {
+  contextBindingHints = {}, referentMemory = [], entityUseBindings = [],
+} = {}) {
   return {
     left: { state: { pattern: { kind: "question", operation: "invoke_compute_capability", slotDefinitions: [] } } },
     right: {
@@ -468,6 +511,8 @@ export function computePath(manifest, operation, { contextBindingHints = {}, ref
           version: manifest.version,
           operationId: operation.operationId,
           inputs: operation.inputs || [],
+          entityDependencies: operation.entityDependencies || [],
+          entityUseBindings,
           contextBindingHints,
           referentMemory,
           outputs: operation.outputs || [],

@@ -70,6 +70,14 @@ ONEVAR_TEST_PROTECTED_VALUE=4 \
   scenarios/seamless-context-protection-compute.json \
   --profiles seamless-owner,seamless-reader
 
+# Reset before and after a non-protected two-user Compute installation run.
+# User 2 discovers User 1's app but compiles a separate exact-ID-bound Path.
+ONEVAR_TEST_WEBSITE_URL=https://1var.com \
+  node src/cli.js compute-sharing run \
+  scenarios/cross-user-carwash-entity-use.json \
+  --profiles carwash-author,carwash-installer \
+  --reset reset:local
+
 # Reset only an explicitly enabled, server-authorized test environment.
 node src/cli.js db reset --confirm reset:local
 ```

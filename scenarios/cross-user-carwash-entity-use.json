@@ -1,0 +1,94 @@
+{
+  "name": "Cross-user carwash installs a scoped entity-use Path",
+  "actors": ["user1", "user2"],
+  "controlSequence": [3, 2, 3],
+  "protectedAssets": false,
+  "author": {
+    "setup": [
+      {
+        "name": "User 1 owns a car",
+        "input": "I have a car",
+        "equationId": "activity_possession_composed_statement"
+      },
+      {
+        "name": "User 1 names the car",
+        "input": "My car is a Toyota Camry",
+        "equationId": "owned_entity_alias_composed_statement"
+      },
+      {
+        "name": "User 1 records the dirty condition",
+        "input": "My Toyota Camry is dirty.",
+        "equationId": "self_property_composed_statement"
+      }
+    ],
+    "build": {
+      "requirementSegments": [
+        "Build me a carwash app that will clean my car.",
+        "I can say, \"wash my car\", \"wash my camry\" or \"wash my toyota\".",
+        "It will switch my car from dirty to clean.",
+        "It will respond \"Your car is clean\", \"Your Camry is clean\" or \"Your Toyota is clean\".",
+        "It will update the status from dirty to clean."
+      ]
+    },
+    "steps": [
+      {
+        "type": "invoke",
+        "name": "User 1 washes the Camry",
+        "input": "Wash my Camry",
+        "subjectValue": "Camry",
+        "requestId": "cross-user-carwash-author-wash",
+        "expect": { "answer": "Your Camry is clean" }
+      },
+      {
+        "type": "essence",
+        "name": "User 1 reads the Camry status",
+        "input": "What is the status of my Camry",
+        "equationId": "owned_entity_status_composed_query",
+        "expect": {
+          "answer": ["clean"],
+          "responseSentence": "The status of your Camry is clean."
+        }
+      },
+      {
+        "type": "essence",
+        "name": "User 1 checks Toyota's condition",
+        "input": "Is my Toyota clean or dirty?",
+        "equationId": "owned_entity_choice_composed_query",
+        "expect": {
+          "answer": ["clean"],
+          "responseSentence": "Your Toyota is clean."
+        }
+      }
+    ]
+  },
+  "installer": {
+    "setup": [
+      {
+        "name": "User 2 owns a car",
+        "input": "I have a car.",
+        "equationId": "activity_possession_composed_statement"
+      },
+      {
+        "name": "User 2 records the dirty condition",
+        "input": "My car is dirty.",
+        "equationId": "self_property_composed_statement"
+      }
+    ],
+    "invoke": {
+      "name": "User 2 discovers and washes with User 1's app",
+      "input": "Wash my car.",
+      "subjectValue": "car",
+      "requestId": "cross-user-carwash-installer-wash",
+      "expect": { "answer": "Your car is clean" }
+    },
+    "verify": {
+      "name": "User 2 reads the updated car status",
+      "input": "What is the status of my car",
+      "equationId": "owned_entity_status_composed_query",
+      "expect": {
+        "answer": ["clean"],
+        "responseSentence": "The status of your Car is clean."
+      }
+    }
+  }
+}
