@@ -249,6 +249,31 @@ export async function loadPublishedSemanticPathRuntime(websiteUrl, fetchImpl) {
   if (!installed.ok) throw new Error(`Published subpatterns failed validation: ${installed.errors?.join("; ")}`);
   let instanceCounter = 0;
 
+  const requestTimeValues = (now = new Date()) => {
+    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+    const dateParts = Object.fromEntries(
+      new Intl.DateTimeFormat("en-CA", {
+        timeZone,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).formatToParts(now).map((part) => [part.type, part.value]),
+    );
+    const date = `${dateParts.year}-${dateParts.month}-${dateParts.day}`;
+    const offsetPart = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      timeZoneName: "longOffset",
+    }).formatToParts(now).find((part) => part.type === "timeZoneName")?.value || "GMT";
+    const offsetMatch = offsetPart.match(/^GMT([+-]\d{2}:\d{2})$/);
+    const offset = offsetMatch?.[1] || "+00:00";
+    return {
+      dateStartIso: `${date}T00:00:00${offset}`,
+      dateEndIso: `${date}T23:59:59${offset}`,
+      timeZone,
+      dateGranularity: "date",
+    };
+  };
+
   const tokensFor = (text) => {
     const doc = sandbox.nlp(String(text || "")).compute("tagger").compute("root");
     const directTerms = doc.terms().json();
@@ -267,9 +292,14 @@ export async function loadPublishedSemanticPathRuntime(websiteUrl, fetchImpl) {
         : Object.keys(term?.tags || {}).filter((tag) => term.tags[tag]),
     }));
   };
-  const bindingValue = (binding, tokens, graphStore) => {
+  const bindingValue = (binding, tokens, graphStore, requestTime) => {
     if (binding.source === "currentSpeaker") return "speaker";
     if (binding.source === "literal") return binding.literal;
+    if (binding.source === "requestTime") {
+      const value = requestTime[binding.value];
+      if (value == null) throw new Error(`Command Path requestTime value ${binding.value} is unsupported`);
+      return value;
+    }
     if (binding.source !== "token") throw new Error(`Command Path binding source ${binding.source} is unsupported`);
     const start = Math.max(1, Number(binding.token || 1));
     const end = Math.max(start, Number(binding.tokenEnd || start));
@@ -330,15 +360,31 @@ export async function loadPublishedSemanticPathRuntime(websiteUrl, fetchImpl) {
         );
       }
       instanceCounter += 1;
+      const requestTime = requestTimeValues();
       const specs = new Map((path.right?.state?.bindings || []).map((binding) => [binding.name, binding]));
       for (const binding of match.bindings || []) specs.set(binding.name, { ...specs.get(binding.name), ...binding });
       const bindings = Object.fromEntries([...specs].map(([name, binding]) => [
         name,
-        bindingValue(binding, tokens, graphStore),
+        bindingValue(binding, tokens, graphStore, requestTime),
       ]));
-      const rows = (path.right?.state?.rows || []).map((row) =>
+      const baseRows = (path.right?.state?.rows || []).map((row) =>
         row.map((cell) => resolveCell(cell, bindings, graphStore))
       );
+      const present = (value) => Array.isArray(value)
+        ? value.length > 0
+        : value != null && String(value).trim() !== "";
+      const conditionalRows = (path.right?.state?.conditionalRows || []).flatMap((conditional) => {
+        const whenAll = (conditional?.whenAll || []).map(String);
+        const whenAny = (conditional?.whenAny || []).map(String);
+        if (!whenAll.every((name) => present(bindings[name]))) return [];
+        if (whenAny.length && !whenAny.some((name) => present(bindings[name]))) return [];
+        return (conditional?.rows || []).map((row) =>
+          row.map((cell) => resolveCell(cell, bindings, graphStore))
+        );
+      });
+      const rows = sandbox.oneVarPathBindingWorkerLib?.orderConstraintRowsBeforeAggregates
+        ? sandbox.oneVarPathBindingWorkerLib.orderConstraintRowsBeforeAggregates(baseRows, conditionalRows)
+        : [...baseRows, ...conditionalRows];
       const mode = path.right?.state?.mode || "statement";
       let answer = [];
       let queryValues = {};
@@ -442,6 +488,9 @@ export async function runComputeScenarioObject(scenario, {
     if (step.expect?.kind && result.kind !== step.expect.kind) {
       throw new Error(`Expected setup Essence kind ${step.expect.kind}, received ${result.kind}`);
     }
+    if (step.expect?.execution && result.execution !== step.expect.execution) {
+      throw new Error(`Expected setup execution ${step.expect.execution}, received ${result.execution}`);
+    }
     setupResults.push({ type: "essence", ...result });
   }
   const build = {
@@ -532,6 +581,9 @@ export async function runComputeScenarioObject(scenario, {
         });
       if (step.expect?.kind && result.kind !== step.expect.kind) {
         throw new Error(`Expected Essence kind ${step.expect.kind}, received ${result.kind}`);
+      }
+      if (step.expect?.execution && result.execution !== step.expect.execution) {
+        throw new Error(`Expected Essence execution ${step.expect.execution}, received ${result.execution}`);
       }
       if (step.expect?.answer && JSON.stringify(result.answer || []) !== JSON.stringify(step.expect.answer)) {
         throw new Error(

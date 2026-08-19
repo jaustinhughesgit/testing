@@ -78,6 +78,49 @@ test("a command scenario executes the published composed self-property Path", as
   assert.deepEqual(Array.from(ingested.at(-1)), ["present", "speaker", "register status", "closed"]);
 });
 
+test("a command scenario executes the published composed possession Path", async () => {
+  const fetchImpl = async (url) => {
+    const relative = sources.get(String(url));
+    if (!relative) return new Response("missing", { status: 404 });
+    const body = fs.readFileSync(path.join(awsPublic, relative));
+    return new Response(body, {
+      status: 200,
+      headers: { "content-type": relative.endsWith(".json") ? "application/json" : "text/javascript" },
+    });
+  };
+  const runtime = await loadPublishedSemanticPathRuntime("https://website.example", fetchImpl);
+  const graphStore = await loadPublishedGraphStore("https://website.example", fetchImpl);
+  const result = runtime.execute(
+    "activity_possession_composed_statement",
+    "I have a car.",
+    graphStore,
+  );
+
+  assert.equal(result.execution, "published-semantic-path");
+  assert.equal(result.bindings.actor, "speaker");
+  assert.equal(result.bindings.activity, "have");
+  assert.equal(result.bindings.object, "car");
+  assert.equal(result.bindings.object_owner, "speaker");
+  const snapshot = graphStore.getSnapshot();
+  const hasPredicates = Object.values(snapshot.entities)
+    .filter((entity) => entity.lemmas?.includes("have"));
+  const speaker = Object.values(snapshot.entities)
+    .find((entity) => entity.names?.includes("speaker") || entity.lemmas?.includes("speaker"));
+  const car = Object.values(snapshot.entities)
+    .find((entity) => entity.lemmas?.includes("car"));
+  assert.ok(hasPredicates.length);
+  assert.ok(speaker);
+  assert.ok(car);
+  assert.equal(
+    Object.values(snapshot.relations).some((relation) =>
+      relation.subj === speaker.id
+      && hasPredicates.some((predicate) => predicate.id === relation.prop)
+      && relation.obj === car.id
+    ),
+    true,
+  );
+});
+
 test("a command scenario constrains a named quantity question to the requested item", async () => {
   const fetchImpl = async (url) => {
     const relative = sources.get(String(url));

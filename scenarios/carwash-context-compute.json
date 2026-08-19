@@ -4,7 +4,12 @@
     {
       "name": "store car ownership",
       "input": "I have a car",
-      "expect": { "kind": "statement" }
+      "execution": "published-semantic-path",
+      "equationId": "activity_possession_composed_statement",
+      "expect": {
+        "kind": "statement",
+        "execution": "published-semantic-path"
+      }
     },
     {
       "name": "store car make and model",
