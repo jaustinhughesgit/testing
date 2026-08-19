@@ -314,16 +314,26 @@ export async function loadPublishedSemanticPathRuntime(websiteUrl, fetchImpl) {
     // example a name ending in "verified") and break exact positioning.
     const field = binding.value === "text"
       ? "text"
-      : (["normal", "resolvedEntity", "resolvedEntityList"].includes(binding.value) ? "normal" : "lemma");
+      : (["normal", "resolvedEntity", "existingRelatedEntity", "resolvedEntityList"].includes(binding.value) ? "normal" : "lemma");
     const value = selected.map((token) => String(token[field] || "").toLowerCase()).filter(Boolean).join(" ");
-    if (binding.value === "resolvedEntity") {
+    if (["resolvedEntity", "existingRelatedEntity"].includes(binding.value)) {
+      if (binding.value === "existingRelatedEntity" && typeof graphStore.getSnapshot !== "function") return "";
       const graph = graphStore.getSnapshot();
       const candidates = (graph.mentions?.[value]?.entities || []).filter((entityId) => graph.entities?.[entityId]);
       const exactNames = candidates.filter((entityId) => (
         graph.entities[entityId].names || []
       ).some((name) => String(name).toLowerCase() === value));
       const resolved = exactNames.length === 1 ? exactNames[0] : (candidates.length === 1 ? candidates[0] : "");
+      if (resolved && binding.value === "existingRelatedEntity") {
+        const subjectCandidates = (graph.mentions?.speaker?.entities || [])
+          .filter((entityId) => graph.entities?.[entityId]);
+        const subjectId = subjectCandidates.length === 1 ? subjectCandidates[0] : "";
+        return subjectId && Object.values(graph.relations || {}).some((relation) => (
+          relation.subj === subjectId && relation.obj === resolved
+        )) ? resolved : "";
+      }
       if (resolved) return resolved;
+      if (binding.value === "existingRelatedEntity") return "";
     }
     return value;
   };
@@ -344,6 +354,15 @@ export async function loadPublishedSemanticPathRuntime(websiteUrl, fetchImpl) {
         : { var: variableName, entityId: "", lemma: String(value || "").trim().toLowerCase() };
     }
     throw new Error(`Command Path row reference ${cell.ref || "unknown"} is unsupported`);
+  };
+  const resolveValue = (value, bindings, graphStore) => {
+    if (Array.isArray(value)) return value.map((entry) => resolveValue(entry, bindings, graphStore));
+    if (!value || typeof value !== "object") return value;
+    if (value.ref) return resolveCell(value, bindings, graphStore);
+    return Object.fromEntries(Object.entries(value).map(([name, entry]) => [
+      name,
+      resolveValue(entry, bindings, graphStore),
+    ]));
   };
 
   return {
@@ -376,8 +395,10 @@ export async function loadPublishedSemanticPathRuntime(websiteUrl, fetchImpl) {
       const conditionalRows = (path.right?.state?.conditionalRows || []).flatMap((conditional) => {
         const whenAll = (conditional?.whenAll || []).map(String);
         const whenAny = (conditional?.whenAny || []).map(String);
+        const whenNone = (conditional?.whenNone || []).map(String);
         if (!whenAll.every((name) => present(bindings[name]))) return [];
         if (whenAny.length && !whenAny.some((name) => present(bindings[name]))) return [];
+        if (!whenNone.every((name) => !present(bindings[name]))) return [];
         return (conditional?.rows || []).map((row) =>
           row.map((cell) => resolveCell(cell, bindings, graphStore))
         );
@@ -393,6 +414,13 @@ export async function loadPublishedSemanticPathRuntime(websiteUrl, fetchImpl) {
         answer = Array.from(query?.vars?.ask || []);
         queryValues = query?.vars || {};
       } else {
+        if (path.right?.state?.transaction) {
+          const transaction = resolveValue(path.right.state.transaction, bindings, graphStore);
+          const applied = graphStore.applyDeclarativeTransaction(transaction);
+          if (!applied?.ok) {
+            throw new Error(`Published semantic Path ${equationId} transaction failed: ${JSON.stringify(applied?.errors || [])}`);
+          }
+        }
         graphStore.ingestEssenceRows(rows);
       }
       const resolveEntity = (value) => {

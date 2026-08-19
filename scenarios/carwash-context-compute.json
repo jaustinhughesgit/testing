@@ -14,12 +14,22 @@
     {
       "name": "store car make and model",
       "input": "My car is a Toyota Camry",
-      "expect": { "kind": "statement" }
+      "execution": "published-semantic-path",
+      "equationId": "owned_entity_alias_composed_statement",
+      "expect": {
+        "kind": "statement",
+        "execution": "published-semantic-path"
+      }
     },
     {
       "name": "store dirty car state",
       "input": "My Toyota Camry is dirty.",
-      "expect": { "kind": "statement" }
+      "execution": "published-semantic-path",
+      "equationId": "self_property_composed_statement",
+      "expect": {
+        "kind": "statement",
+        "execution": "published-semantic-path"
+      }
     }
   ],
   "build": {
@@ -77,8 +87,11 @@
       "type": "essence",
       "name": "read Camry status",
       "input": "What is the status of my Camry",
+      "execution": "published-semantic-path",
+      "equationId": "owned_entity_status_composed_query",
       "expect": {
         "kind": "question",
+        "execution": "published-semantic-path",
         "answer": ["clean"]
       }
     },
@@ -86,8 +99,11 @@
       "type": "essence",
       "name": "check Toyota condition",
       "input": "Is my Toyota clean or dirty?",
+      "execution": "published-semantic-path",
+      "equationId": "owned_entity_choice_composed_query",
       "expect": {
         "kind": "question",
+        "execution": "published-semantic-path",
         "answer": ["clean"]
       }
     }

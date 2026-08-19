@@ -121,6 +121,55 @@ test("a command scenario executes the published composed possession Path", async
   );
 });
 
+test("owned entity aliases and condition queries retain one ContextDB identity", async () => {
+  const fetchImpl = async (url) => {
+    const relative = sources.get(String(url));
+    if (!relative) return new Response("missing", { status: 404 });
+    const body = fs.readFileSync(path.join(awsPublic, relative));
+    return new Response(body, {
+      status: 200,
+      headers: { "content-type": relative.endsWith(".json") ? "application/json" : "text/javascript" },
+    });
+  };
+  const runtime = await loadPublishedSemanticPathRuntime("https://website.example", fetchImpl);
+  const graphStore = await loadPublishedGraphStore("https://website.example", fetchImpl);
+
+  runtime.execute("activity_possession_composed_statement", "I have a car.", graphStore);
+  runtime.execute("owned_entity_alias_composed_statement", "My car is a Toyota Camry.", graphStore);
+  runtime.execute("self_property_composed_statement", "My Toyota Camry is dirty.", graphStore);
+
+  const snapshot = graphStore.getSnapshot();
+  const carId = snapshot.mentions.car.entities[0];
+  assert.deepEqual(Array.from(snapshot.mentions["toyota camry"].entities), [carId]);
+  assert.deepEqual(Array.from(snapshot.mentions.toyota.entities), [carId]);
+  assert.deepEqual(Array.from(snapshot.mentions.camry.entities), [carId]);
+  assert.deepEqual(
+    runtime.execute("owned_entity_status_composed_query", "What is the status of my Camry?", graphStore).answer,
+    ["dirty"],
+  );
+  assert.deepEqual(
+    runtime.execute("owned_entity_choice_composed_query", "Is my Toyota clean or dirty?", graphStore).answer,
+    ["dirty"],
+  );
+
+  const personalStore = await loadPublishedGraphStore("https://website.example", fetchImpl);
+  runtime.execute("self_property_composed_statement", "My register status is open.", personalStore);
+  const repeatedProperty = runtime.execute(
+    "self_property_composed_statement",
+    "My register status is closed.",
+    personalStore,
+  );
+  assert.equal(repeatedProperty.bindings.related_subject, "");
+  assert.deepEqual(Array.from(repeatedProperty.essence.at(-1)), [
+    "present", "speaker", "register status", "closed",
+  ]);
+  const personal = personalStore.getSnapshot();
+  assert.equal(Object.values(personal.relations).some((relation) => (
+    personal.entities[relation.subj]?.lemmas?.includes("register status")
+    && personal.entities[relation.prop]?.lemmas?.includes("condition")
+  )), false);
+});
+
 test("a command scenario constrains a named quantity question to the requested item", async () => {
   const fetchImpl = async (url) => {
     const relative = sources.get(String(url));
