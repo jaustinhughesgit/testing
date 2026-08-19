@@ -158,6 +158,22 @@ async function inspectPublishedCapability(actorState, manifest, query) {
   };
 }
 
+export async function pollCapabilityPublication(inspect, {
+  attempts = 12,
+  wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  delayMs = 1_000,
+} = {}) {
+  let publication = null;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    publication = await inspect();
+    if (publication.registryAvailable && publication.positionAvailable && publication.canUse) {
+      return publication;
+    }
+    if (attempt < attempts) await wait(delayMs);
+  }
+  return publication;
+}
+
 async function actor(config, profile) {
   const stateStore = new StateStore(config.stateDirectory, profile);
   const state = stateStore.load();
@@ -268,7 +284,9 @@ export async function runCrossUserComputeScenarioObject(scenario, {
   }
   const invocation = scenario.installer.invoke;
   installerHistory.push(invocation.input);
-  const publication = await inspectPublishedCapability(installer, built.manifest, invocation.input);
+  const publication = await pollCapabilityPublication(
+    () => inspectPublishedCapability(installer, built.manifest, invocation.input)
+  );
   if (!publication.registryAvailable || !publication.positionAvailable || !publication.canUse) {
     throw new Error(`Built Compute definition is not reusable by User 2: ${JSON.stringify(publication)}`);
   }

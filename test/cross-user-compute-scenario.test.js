@@ -7,7 +7,10 @@ import {
   loadComputeRuntime,
   loadPublishedSemanticPathRuntime,
 } from "../src/compute-scenario.js";
-import { operationSubjectInput } from "../src/cross-user-compute-scenario.js";
+import {
+  operationSubjectInput,
+  pollCapabilityPublication,
+} from "../src/cross-user-compute-scenario.js";
 import { loadPublishedGraphStore } from "../src/message-scenario.js";
 
 const awsPublic = path.resolve(import.meta.dirname, "../../aws/app/public");
@@ -62,6 +65,21 @@ test("the sharing runner uses the effect's exact generated subject input name", 
     }],
     contextEffects: [{ subjectInput: "utterance" }],
   }, "vehicle"), "utterance");
+});
+
+test("the sharing runner waits for bounded Position propagation after registration", async () => {
+  let calls = 0;
+  const publication = await pollCapabilityPublication(async () => {
+    calls += 1;
+    return {
+      registryAvailable: true,
+      positionAvailable: calls >= 3,
+      canUse: calls >= 3,
+    };
+  }, { attempts: 4, delayMs: 0, wait: async () => {} });
+  assert.equal(calls, 3);
+  assert.equal(publication.positionAvailable, true);
+  assert.equal(publication.canUse, true);
 });
 
 test("the non-protected two-user carwash flow updates only the exact installed entity binding", async () => {
