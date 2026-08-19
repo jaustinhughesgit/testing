@@ -33,6 +33,14 @@ function convertFailureDiagnostic(result) {
     error: result?.error || null,
     errorDetails: result?.errorDetails || null,
     diagnostics: result?.diagnostics || null,
+    computeDiscovery: result?.computeDiscovery ? {
+      decision: result.computeDiscovery.decision || null,
+      source: result.computeDiscovery.source || null,
+      confidence: result.computeDiscovery.confidence ?? null,
+      reason: result.computeDiscovery.reason || null,
+      existingEntityId: result.computeDiscovery.existingManifest?.entityId || null,
+      existingCapabilityId: result.computeDiscovery.existingManifest?.capabilityId || null,
+    } : null,
     build: result?.build ? {
       status: result.build.status || null,
       error: result.build.error || null,
@@ -41,6 +49,11 @@ function convertFailureDiagnostic(result) {
       failure: result.build.failure || null,
     } : null,
   });
+}
+
+export function isRetryableDiscoveryFailure(result) {
+  return result?.errorDetails?.retryable === true
+    && String(result.errorDetails.stage || "") === "compute_discovery";
 }
 
 function findManifest(value, seen = new Set()) {
@@ -108,6 +121,7 @@ async function callConvert(client, workspaceId, body, { retries = 4 } = {}) {
 export async function buildCapability(client, workspaceId, build, progress = () => {}) {
   const prompt = requirementEnvelope(build.requirementSegments || [], build.authoringContext || null);
   let discoveryJobId = null;
+  let discoveryReplacements = 0;
   let capabilityRequest = null;
   let blueprintId = "entity.declarative.remote.v1";
   for (let poll = 0; poll < 90; poll += 1) {
@@ -121,6 +135,16 @@ export async function buildCapability(client, workspaceId, build, progress = () 
     });
     const status = String(result?.build?.status || "");
     progress({ phase: "discovery", status, poll: poll + 1 });
+    if (isRetryableDiscoveryFailure(result) && discoveryReplacements < 2) {
+      discoveryReplacements += 1;
+      discoveryJobId = null;
+      progress({
+        phase: "discovery-replacement",
+        status: result.errorDetails.code || "RETRYABLE_DISCOVERY_FAILURE",
+        poll: discoveryReplacements,
+      });
+      continue;
+    }
     if (status === "DISCOVERY_PENDING") {
       discoveryJobId = String(result?.build?.backgroundJob?.jobId || discoveryJobId || "");
       if (!discoveryJobId) throw new Error("Convert discovery omitted its job id");
@@ -213,6 +237,7 @@ export async function discoverExistingCapability(
     relevantItems: semanticEvidence ? [semanticEvidence] : [],
   };
   let discoveryJobId = null;
+  let discoveryReplacements = 0;
   for (let poll = 0; poll < 90; poll += 1) {
     const result = await callConvert(client, workspaceId, {
       llmTemplateId: "original-v1",
@@ -224,6 +249,16 @@ export async function discoverExistingCapability(
     });
     const status = String(result?.build?.status || "");
     progress({ phase: "reuse-discovery", status, poll: poll + 1 });
+    if (isRetryableDiscoveryFailure(result) && discoveryReplacements < 2) {
+      discoveryReplacements += 1;
+      discoveryJobId = null;
+      progress({
+        phase: "reuse-discovery-replacement",
+        status: result.errorDetails.code || "RETRYABLE_DISCOVERY_FAILURE",
+        poll: discoveryReplacements,
+      });
+      continue;
+    }
     if (status === "DISCOVERY_PENDING") {
       discoveryJobId = String(result?.build?.backgroundJob?.jobId || discoveryJobId || "");
       if (!discoveryJobId) throw new Error("Reuse discovery omitted its job id");

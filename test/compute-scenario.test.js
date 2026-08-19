@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import {
   loadPublishedSemanticPathRuntime,
+  isRetryableDiscoveryFailure,
   selectCapabilityManifest,
   selectReusableCapabilityManifest,
 } from "../src/compute-scenario.js";
@@ -51,6 +52,19 @@ test("compute create/reuse scenarios fail explicitly when discovery requires Edi
     () => selectReusableCapabilityManifest({}, "CAPABILITY_EXTENSION_REQUIRED"),
     /requires an entity extension/
   );
+});
+
+test("compute scenarios recognize bounded-replacement discovery failures", () => {
+  assert.equal(isRetryableDiscoveryFailure({
+    errorDetails: {
+      code: "ANSWER_PLAN_SOURCE_MISSING",
+      stage: "compute_discovery",
+      retryable: true,
+    },
+  }), true);
+  assert.equal(isRetryableDiscoveryFailure({
+    errorDetails: { stage: "compute_build", retryable: true },
+  }), false);
 });
 
 test("a command scenario executes the published composed self-property Path", async () => {

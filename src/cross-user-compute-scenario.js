@@ -80,6 +80,84 @@ function findOperation(manifest, operationId = "") {
     || null;
 }
 
+function unwrapRouteValue(value) {
+  let current = value;
+  for (let index = 0; index < 10; index += 1) {
+    if (!current || typeof current !== "object" || Array.isArray(current)) break;
+    if (Array.isArray(current.manifests) || Array.isArray(current.results)) break;
+    if (current.oai?.html && typeof current.oai.html === "object") current = current.oai.html;
+    else if (current.response && typeof current.response === "object") current = current.response;
+    else if (current.html && typeof current.html === "object") current = current.html;
+    else break;
+  }
+  return current;
+}
+
+async function inspectPublishedCapability(actorState, manifest, query) {
+  const listed = unwrapRouteValue((await actorState.client.call("capabilities", {
+    path: ["find", manifest.capabilityId],
+    body: { includeInactive: true, limit: 25 },
+  })).data);
+  const searched = unwrapRouteValue((await actorState.client.call("search", {
+    body: { text: query, topK: 60, bandWindow: 512 },
+  })).data);
+  const semanticQuery = [
+    `capability ${manifest.name || manifest.capabilityId}`,
+    manifest.description,
+    ...(manifest.operations || []).flatMap((operation) => [
+      `operation ${operation.operationId || ""} ${operation.description || ""}`,
+      ...(operation.inputs || []).map((input) => [
+        "input", input.name, input.type, input.required === false ? "optional" : "required",
+        input.description, input.bindingHint?.source, input.bindingHint?.resolver,
+        input.bindingHint?.subject, input.bindingHint?.property,
+      ].filter(Boolean).join(" ")),
+      ...(operation.outputs || []).map((output) => [
+        "output", output.name, output.type, output.required === false ? "optional" : "required",
+        output.description, output.bindingHint?.source, output.bindingHint?.resolver,
+        output.bindingHint?.subject, output.bindingHint?.property,
+      ].filter(Boolean).join(" ")),
+    ]),
+  ].filter(Boolean).join(" ").replace(/\s+/g, " ").trim().slice(0, 6_000);
+  const exactSearched = unwrapRouteValue((await actorState.client.call("search", {
+    body: { text: semanticQuery, topK: 60, bandWindow: 512 },
+  })).data);
+  const listedManifest = (listed?.manifests || []).find((item) =>
+    String(item?.entityId || "") === String(manifest.entityId)
+  );
+  const searchCandidate = (searched?.results || []).find((item) =>
+    String(item?.su || "") === String(manifest.entityId)
+  );
+  const exactCandidate = (exactSearched?.results || []).find((item) =>
+    String(item?.su || "") === String(manifest.entityId)
+  );
+  return {
+    registryAvailable: !!listedManifest,
+    positionAvailable: !!searchCandidate,
+    canUse: searchCandidate?.canUse === true,
+    exactPositionAvailable: !!exactCandidate,
+    exactCanUse: exactCandidate?.canUse === true,
+    searchCandidate: searchCandidate ? {
+      su: String(searchCandidate.su),
+      policy_id: searchCandidate.policy_id || null,
+      perm: searchCandidate.perm || null,
+      canUse: searchCandidate.canUse === true,
+      bandDelta: searchCandidate.bandDelta ?? null,
+    } : null,
+    listedCount: Array.isArray(listed?.manifests) ? listed.manifests.length : 0,
+    searchCount: Array.isArray(searched?.results) ? searched.results.length : 0,
+    exactSearchCount: Array.isArray(exactSearched?.results) ? exactSearched.results.length : 0,
+    operationEvidence: (manifest.operations || []).map((operation) => ({
+      operationId: operation.operationId,
+      inputs: (operation.inputs || []).map((input) => ({
+        name: input.name,
+        source: input.bindingHint?.source || null,
+        resolver: input.bindingHint?.resolver || null,
+      })),
+      utteranceExamples: (operation.utteranceExamples || []).slice(0, 12),
+    })),
+  };
+}
+
 async function actor(config, profile) {
   const stateStore = new StateStore(config.stateDirectory, profile);
   const state = stateStore.load();
@@ -190,6 +268,10 @@ export async function runCrossUserComputeScenarioObject(scenario, {
   }
   const invocation = scenario.installer.invoke;
   installerHistory.push(invocation.input);
+  const publication = await inspectPublishedCapability(installer, built.manifest, invocation.input);
+  if (!publication.registryAvailable || !publication.positionAvailable || !publication.canUse) {
+    throw new Error(`Built Compute definition is not reusable by User 2: ${JSON.stringify(publication)}`);
+  }
   const reused = await discoverExistingCapability(
     installer.client,
     installer.workspaceId,
@@ -230,6 +312,7 @@ export async function runCrossUserComputeScenarioObject(scenario, {
       copiedCreatorPath: false,
       generatedLocalPath: true,
       entityUseBindings,
+      publication,
     },
     authorAnswers: authorResults.map((result) => result.answer || result.responseSentence || null).filter(Boolean),
     installerAnswer: execution.answer,
