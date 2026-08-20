@@ -45,9 +45,37 @@ export function retainProtectedEntityReferences(actor, snapshot) {
   return actor.protectedEntityReferences;
 }
 
+export function publicationRelationIds(before = {}, after = {}) {
+  const beforeRelations = before.relations || {};
+  const afterRelations = after.relations || {};
+  const addedRelationIds = Object.keys(afterRelations).filter((id) => !beforeRelations[id]);
+  const removedRelationIds = Object.keys(beforeRelations).filter((id) => !afterRelations[id]);
+  const changedRelationIds = Object.keys(afterRelations).filter((id) => (
+    !!beforeRelations[id]
+    && JSON.stringify(beforeRelations[id]) !== JSON.stringify(afterRelations[id])
+  ));
+  const changedEntityIds = Object.keys(after.entities || {}).filter((id) => (
+    !!before.entities?.[id]
+    && JSON.stringify(before.entities[id]) !== JSON.stringify(after.entities[id])
+  ));
+  const carrierRelationIds = changedEntityIds.flatMap((entityId) => {
+    const relation = Object.values(afterRelations).find((candidate) => (
+      candidate?.subj === entityId || candidate?.prop === entityId || candidate?.obj === entityId
+    ));
+    return relation?.id ? [relation.id] : [];
+  });
+  return {
+    addedRelationIds: [...new Set([
+      ...addedRelationIds,
+      ...changedRelationIds,
+      ...carrierRelationIds,
+    ])],
+    removedRelationIds,
+  };
+}
+
 export async function publishDelta(actor, before, after, source, contextPublication) {
-  const addedRelationIds = Object.keys(after.relations || {}).filter((id) => !before.relations?.[id]);
-  const removedRelationIds = Object.keys(before.relations || {}).filter((id) => !after.relations?.[id]);
+  const { addedRelationIds, removedRelationIds } = publicationRelationIds(before, after);
   const payload = contextPublication.deltaEnvelope({
     before,
     after,
