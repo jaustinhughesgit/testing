@@ -158,6 +158,34 @@ function findOperation(manifest, operationId = "") {
     || null;
 }
 
+function discoveryBindingDiagnostic(manifest, evidence) {
+  const referents = evidence?.invocationReferents || [];
+  const targetIds = new Set(referents.map((referent) => (
+    referent?.targetResolvedLocally ? String(referent.targetEntityId || "") : ""
+  )).filter(Boolean));
+  return {
+    operations: (manifest?.operations || []).map((operation) => ({
+      operationId: operation.operationId,
+      requiredUtteranceInputs: (operation.inputs || []).filter((input) => (
+        input.required !== false && input.bindingHint?.source === "utterance"
+      )).map((input) => ({
+        name: input.name,
+        resolver: input.bindingHint?.resolver || null,
+      })),
+      examples: (operation.utteranceExamples || []).map((example) => example.text),
+      dependencies: (operation.entityDependencies || []).map((dependency) => ({
+        dependencyId: dependency.dependencyId,
+        effectIndex: dependency.effectIndex,
+      })),
+      effects: operation.contextEffects || [],
+    })),
+    referents,
+    targetRelations: (evidence?.relatedContext?.relations || []).filter((relation) => (
+      targetIds.has(String(relation.subj || ""))
+    )),
+  };
+}
+
 function unwrapRouteValue(value) {
   let current = value;
   for (let index = 0; index < 10; index += 1) {
@@ -476,19 +504,41 @@ export async function runCrossUserComputeScenarioObject(scenario, {
     await hydrateNamed(installer, scenario.installer.hydrateNamed, contextPublication);
   }
   installerHistory.push(invocation.input);
+  const installerEvidence = ordinaryEvidence(
+    installerHistory,
+    installer.graphStore.getSnapshot()
+  );
   const publication = await pollCapabilityPublication(
-    () => inspectPublishedCapability(installer, built.manifest, invocation.input)
+    () => inspectPublishedCapability(
+      installer,
+      built.manifest,
+      installerEvidence.capabilityQuery || invocation.input
+    )
   );
   if (!publication.registryAvailable || !publication.positionAvailable || !publication.canUse) {
     throw new Error(`Built Compute definition is not reusable by User 2: ${JSON.stringify(publication)}`);
   }
-  const reused = await discoverExistingCapability(
-    installer.client,
-    installer.workspaceId,
-    invocation.input,
-    ordinaryEvidence(installerHistory, installer.graphStore.getSnapshot()),
-    progress
-  );
+  const bindingDiagnostic = discoveryBindingDiagnostic(built.manifest, installerEvidence);
+  if (
+    !bindingDiagnostic.referents.some((referent) => (
+      referent?.targetResolvedLocally === true && referent?.targetEntityId
+    ))
+    || !bindingDiagnostic.targetRelations.length
+  ) {
+    throw new Error(`User 2 exact owner-qualified evidence is incomplete: ${JSON.stringify(bindingDiagnostic)}`);
+  }
+  let reused;
+  try {
+    reused = await discoverExistingCapability(
+      installer.client,
+      installer.workspaceId,
+      invocation.input,
+      installerEvidence,
+      progress
+    );
+  } catch (error) {
+    throw new Error(`${error.message}; binding evidence ${JSON.stringify(bindingDiagnostic)}`);
+  }
   assertEqual(reused.manifest.entityId, built.manifest.entityId, "Position-selected Compute entity ID");
   assertEqual(reused.manifest.version, built.manifest.version, "Position-selected Compute version");
   const installerOperation = findOperation(reused.manifest, reused.discovery?.essence?.operationId);
