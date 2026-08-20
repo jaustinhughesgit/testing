@@ -396,7 +396,13 @@ export async function loadPublishedSemanticPathRuntime(websiteUrl, fetchImpl) {
     if (["resolvedEntity", "existingRelatedEntity"].includes(binding.value)) {
       if (binding.value === "existingRelatedEntity" && typeof graphStore.getSnapshot !== "function") return "";
       const graph = graphStore.getSnapshot();
-      const candidates = (graph.mentions?.[value]?.entities || []).filter((entityId) => graph.entities?.[entityId]);
+      const lemmaValue = selected.map((token) => String(token.lemma || token.normal || token.text || "").toLowerCase())
+        .filter(Boolean).join(" ");
+      const mentionKeys = sandbox.oneVarPathBindingWorkerLib?.mentionResolutionKeys?.(value, lemmaValue)
+        || [value];
+      const candidates = [...new Set(mentionKeys.flatMap((key) => (
+        graph.mentions?.[key]?.entities || []
+      )))].filter((entityId) => graph.entities?.[entityId]);
       if (binding.value === "existingRelatedEntity") {
         const subjectCandidates = (graph.mentions?.speaker?.entities || [])
           .filter((entityId) => graph.entities?.[entityId]);
@@ -408,8 +414,13 @@ export async function loadPublishedSemanticPathRuntime(websiteUrl, fetchImpl) {
       }
       const exactNames = candidates.filter((entityId) => (
         graph.entities[entityId].names || []
-      ).some((name) => String(name).toLowerCase() === value));
-      const resolved = exactNames.length === 1 ? exactNames[0] : (candidates.length === 1 ? candidates[0] : "");
+      ).some((name) => mentionKeys.includes(String(name).toLowerCase())));
+      const exactNamed = sandbox.oneVarPathBindingWorkerLib?.uniquelyNamedMentionCandidate?.(
+        graph,
+        candidates,
+        mentionKeys
+      ) || "";
+      const resolved = exactNamed || (exactNames.length === 1 ? exactNames[0] : (candidates.length === 1 ? candidates[0] : ""));
       if (resolved) return resolved;
     }
     return value;

@@ -191,6 +191,21 @@ test("owned entity aliases and condition queries retain one ContextDB identity",
     runtime.execute("owned_entity_choice_composed_query", "Is my Toyota clean or dirty?", graphStore).answer,
     ["dirty"],
   );
+  const austinValueId = graphStore.ensureEntity("austin");
+  const namedSnapshot = graphStore.getSnapshot();
+  namedSnapshot.entities.usr_1.names = [
+    ...(namedSnapshot.entities.usr_1.names || []),
+    "austin",
+  ];
+  namedSnapshot.mentions.austin = { entities: ["usr_1", austinValueId] };
+  graphStore.loadSnapshot(namedSnapshot);
+  const namedChoice = runtime.execute(
+    "related_object_choice_composed_query",
+    "Is Austin's car clean or dirty?",
+    graphStore,
+  );
+  assert.equal(namedChoice.bindings.reference_subject, "usr_1");
+  assert.deepEqual(namedChoice.answer, ["dirty"]);
 
   const beforeCorrection = graphStore.getSnapshot();
   const carCondition = Object.values(beforeCorrection.relations).find((relation) => (
