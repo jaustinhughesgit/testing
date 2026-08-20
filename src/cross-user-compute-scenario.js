@@ -390,13 +390,19 @@ async function invoke(actorState, runtime, manifest, operation, step, entityUseB
       String(effect.sourceDependencyId || ""), effect,
     ]));
     const valueIdMap = new Map();
+    const canonicalValueLabels = {};
     execution.contextEffects = execution.contextEffects.map((effect) => {
       if (effect?.authority !== "owner-published-capability") return effect;
       const acknowledgement = acknowledgements.get(String(effect.sourceDependencyId || ""));
-      if (!acknowledgement?.valueEntityId || !acknowledgement?.relationId) {
+      if (
+        !acknowledgement?.valueEntityId
+        || !acknowledgement?.relationId
+        || !String(acknowledgement?.value || "").trim()
+      ) {
         throw new Error(`${step.name || step.input}: delegated effect acknowledgement was incomplete`);
       }
       valueIdMap.set(String(effect.valueEntityId || ""), String(acknowledgement.valueEntityId));
+      canonicalValueLabels[String(acknowledgement.valueEntityId)] = String(acknowledgement.value || "");
       return {
         ...effect,
         valueEntityId: String(acknowledgement.valueEntityId),
@@ -409,7 +415,8 @@ async function invoke(actorState, runtime, manifest, operation, step, entityUseB
     }
     execution.mutationOps = contextPublication.remapDelegatedMutationOps(
       execution.mutationOps || [],
-      Object.fromEntries(valueIdMap)
+      Object.fromEntries(valueIdMap),
+      canonicalValueLabels
     );
   }
   if (execution.mutationOps?.length) {
