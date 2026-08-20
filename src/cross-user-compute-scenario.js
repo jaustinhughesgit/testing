@@ -391,21 +391,13 @@ async function invoke(actorState, runtime, manifest, operation, step, entityUseB
         delegatedStatus: String(acknowledgement.status || "applied"),
       };
     });
-    execution.mutationOps = (execution.mutationOps || []).flatMap((mutation) => {
-      if (mutation?.type === "entity:create") {
-        const replacementId = valueIdMap.get(String(mutation?.payload?.id || ""));
-        if (!replacementId) return [mutation];
-        if (before.entities?.[replacementId]) return [];
-        return [{ ...mutation, payload: { ...mutation.payload, id: replacementId } }];
-      }
-      if (mutation?.type === "relation:rewire") {
-        const replacementId = valueIdMap.get(String(mutation?.payload?.obj || ""));
-        return replacementId
-          ? [{ ...mutation, payload: { ...mutation.payload, obj: replacementId } }]
-          : [mutation];
-      }
-      return [mutation];
-    });
+    if (typeof contextPublication?.remapDelegatedMutationOps !== "function") {
+      throw new Error(`${step.name || step.input}: delegated Context effect remapper is unavailable`);
+    }
+    execution.mutationOps = contextPublication.remapDelegatedMutationOps(
+      execution.mutationOps || [],
+      Object.fromEntries(valueIdMap)
+    );
   }
   if (execution.mutationOps?.length) {
     const applied = actorState.graphStore.applyMutationOps(execution.mutationOps);
