@@ -315,6 +315,7 @@ async function invoke(actorState, runtime, manifest, operation, step, entityUseB
       graphSnapshot: actorState.graphStore.getSnapshot(),
       sentence: step.input,
       inputOverrides: { [subjectInput]: step.subjectValue },
+      allocateEntityId: () => actorState.graphStore.allocateEntityId?.(),
       fetchImpl: authenticatedFetch(actorState.stateStore, fetch),
       requestId: step.requestId,
     }

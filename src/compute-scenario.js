@@ -751,6 +751,7 @@ export async function runComputeScenarioObject(scenario, {
       graphSnapshot: graphStore.getSnapshot(),
       sentence: String(step.input || ""),
       inputOverrides,
+      allocateEntityId: () => graphStore.allocateEntityId?.(),
       fetchImpl: transport,
       requestId: `command-scenario-${index + 1}`,
     });

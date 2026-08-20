@@ -372,6 +372,7 @@ export async function runSeamlessCapabilityScenarioObject(rawScenario, {
         {
           graphSnapshot: actor.graphStore.getSnapshot(),
           sentence: step.input,
+          allocateEntityId: () => actor.graphStore.allocateEntityId?.(),
           fetchImpl: authenticatedFetch(actor.stateStore, fetchImpl),
           requestId: scenarioRequestId({
             runKey, index: index + 1, kind: "compute", workspaceId: actor.workspaceId, input: step.input,
