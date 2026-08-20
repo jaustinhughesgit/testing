@@ -102,6 +102,17 @@ export async function publishDelta(actor, before, after, source, contextPublicat
   const relationIdMap = Object.fromEntries((result?.relations || [])
     .map((relation) => [String(relation?.localId || ""), String(relation?.serverId || "")])
     .filter(([localId, serverId]) => localId && serverId));
+  actor.contextPublicationEntityMap ||= {};
+  actor.contextPublicationRelationMap ||= {};
+  Object.assign(actor.contextPublicationEntityMap, idMap);
+  Object.assign(actor.contextPublicationRelationMap, relationIdMap);
+  // Canonical acknowledgement removes temporary ent_N/rel_N keys from the
+  // visible graph. Keep every acknowledged local ordinal burned, matching the
+  // browser worker, so a later mutation cannot reuse one for a different node.
+  actor.graphStore.reserveLocalIds?.(
+    Object.keys(actor.contextPublicationEntityMap),
+    Object.keys(actor.contextPublicationRelationMap)
+  );
   const remapped = contextPublication.remapGraphSnapshotEntityIds(after, idMap, relationIdMap);
   retainProtectedEntityReferences(actor, remapped);
   actor.graphStore.loadSnapshot(remapped);

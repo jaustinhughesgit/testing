@@ -63,6 +63,7 @@ test("cross-user publication includes same-ID relation rewires", () => {
 test("publication remaps authoritative relation IDs as well as entity IDs", async () => {
   let loaded = null;
   let receivedRelationMap = null;
+  let reservedIds = null;
   const actor = {
     client: {
       call: async () => ({
@@ -79,7 +80,10 @@ test("publication remaps authoritative relation IDs as well as entity IDs", asyn
       }),
     },
     workspaceId: "test-workspace",
-    graphStore: { loadSnapshot: (snapshot) => { loaded = snapshot; } },
+    graphStore: {
+      reserveLocalIds: (...ids) => { reservedIds = ids; },
+      loadSnapshot: (snapshot) => { loaded = snapshot; },
+    },
   };
   const after = {
     entities: {
@@ -124,6 +128,10 @@ test("publication remaps authoritative relation IDs as well as entity IDs", asyn
   }, contextPublication);
 
   assert.deepEqual(receivedRelationMap, { local_condition: "rel_condition" });
+  assert.deepEqual(reservedIds, [
+    ["local_car", "local_clean"],
+    ["local_condition"],
+  ]);
   assert.equal(loaded.relations.rel_condition.id, "rel_condition");
   assert.equal(loaded.relations.rel_condition.subj, "ctx_car");
   assert.equal(loaded.relations.rel_condition.obj, "ctx_clean");
