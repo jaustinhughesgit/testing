@@ -104,23 +104,26 @@ export function ordinaryEvidence(history, graph) {
       ...(graph?.entities?.[id]?.names || []),
       ...(graph?.entities?.[id]?.lemmas || []),
     ].map((value) => String(value).toLowerCase());
-    const targets = [...new Set(relations.filter((relation) => (
+    const ownershipPairs = [...new Map(relations.filter((relation) => (
       ownerIds.has(relation.subj)
       && objectIds.has(relation.obj)
       && entityWords(relation.prop).some((word) => ownershipWords.has(word))
-    )).map((relation) => relation.obj))];
-    const owners = [...ownerIds].filter((id) => entityIds.has(id));
-    if (owners.length === 1 && targets.length === 1) {
+    )).map((relation) => [
+      `${relation.subj}\u001f${relation.obj}`,
+      { ownerId: relation.subj, targetId: relation.obj },
+    ])).values()];
+    if (ownershipPairs.length === 1) {
+      const [{ ownerId, targetId }] = ownershipPairs;
       const phraseStart = possessive.index - ownerText.length;
       const phraseEnd = possessive.index + possessive[0].length;
       qualifiedReferent = {
         role: "qualified_owner",
         mention: ownerText,
         mentionKey: ownerText,
-        entityId: owners[0],
+        entityId: ownerId,
         resolvedLocally: true,
         resolution: "contextdb_exact",
-        targetEntityId: targets[0],
+        targetEntityId: targetId,
         targetMention: `${ownerText}'s ${objectText}`,
         targetResolvedLocally: true,
         targetResolution: "qualified-owner-edge",

@@ -100,8 +100,11 @@ test("owner-qualified evidence separates the named identity from its exact owned
     entities: {
       usr_reader: { id: "usr_reader", names: [], lemmas: ["speaker"] },
       usr_austin: { id: "usr_austin", names: ["austin"], lemmas: ["person"] },
+      ctx_austin_name: { id: "ctx_austin_name", names: ["austin"], lemmas: ["austin"] },
       ctx_car: { id: "ctx_car", names: ["toyota camry"], lemmas: ["car"] },
+      term_car: { id: "term_car", names: [], lemmas: ["car"] },
       term_have: { id: "term_have", names: [], lemmas: ["have"] },
+      term_name: { id: "term_name", names: [], lemmas: ["name"] },
       term_condition: { id: "term_condition", names: [], lemmas: ["condition"] },
       ctx_dirty: { id: "ctx_dirty", names: [], lemmas: ["dirty"] },
     },
@@ -113,6 +116,15 @@ test("owner-qualified evidence separates the named identity from its exact owned
         obj: "ctx_car",
         publisherId: "austin-workspace",
         version: 3,
+        contextSource: "ordinary",
+      },
+      rel_name: {
+        id: "rel_name",
+        subj: "usr_austin",
+        prop: "term_name",
+        obj: "ctx_austin_name",
+        publisherId: "austin-workspace",
+        version: 2,
         contextSource: "ordinary",
       },
       rel_condition: {
@@ -127,8 +139,8 @@ test("owner-qualified evidence separates the named identity from its exact owned
     },
     mentions: {
       speaker: { entities: ["usr_reader"] },
-      austin: { entities: ["usr_austin"] },
-      car: { entities: ["ctx_car"] },
+      austin: { entities: ["usr_austin", "ctx_austin_name"] },
+      car: { entities: ["ctx_car", "term_car"] },
     },
   };
 
