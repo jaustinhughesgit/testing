@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import {
   loadPublishedSemanticPathRuntime,
+  isRetryableBuildFailure,
   isRetryableDiscoveryFailure,
   selectCapabilityManifest,
   selectReusableCapabilityManifest,
@@ -64,6 +65,22 @@ test("compute scenarios recognize bounded-replacement discovery failures", () =>
   }), true);
   assert.equal(isRetryableDiscoveryFailure({
     errorDetails: { stage: "compute_build", retryable: true },
+  }), false);
+});
+
+test("compute scenarios replace only explicitly retryable terminal build failures", () => {
+  assert.equal(isRetryableBuildFailure({
+    build: {
+      status: "BUILD_FAILED",
+      retryable: true,
+      errorDetails: { code: "OPENAI_BACKGROUND_RESPONSE_STALLED" },
+    },
+  }), true);
+  assert.equal(isRetryableBuildFailure({
+    build: { status: "BUILD_FAILED", retryable: false },
+  }), false);
+  assert.equal(isRetryableBuildFailure({
+    build: { status: "BUILD_PENDING", retryable: true },
   }), false);
 });
 

@@ -56,6 +56,11 @@ export function isRetryableDiscoveryFailure(result) {
     && String(result.errorDetails.stage || "") === "compute_discovery";
 }
 
+export function isRetryableBuildFailure(result) {
+  return String(result?.build?.status || "") === "BUILD_FAILED"
+    && result?.build?.retryable === true;
+}
+
 function findManifest(value, seen = new Set()) {
   if (!value || typeof value !== "object" || seen.has(value)) return null;
   seen.add(value);
@@ -179,6 +184,7 @@ export async function buildCapability(client, workspaceId, build, progress = () 
   let buildId = null;
   let computeBuildJobId = null;
   let buildContinuation = null;
+  let buildReplacements = 0;
   for (let poll = 0; poll < 120; poll += 1) {
     const result = await callConvert(client, workspaceId, {
       llmTemplateId: build.llmTemplateId || "original-v1",
@@ -205,6 +211,17 @@ export async function buildCapability(client, workspaceId, build, progress = () 
       buildContinuation = result?.build?.continuation;
       computeBuildJobId = null;
       if (!buildId || !buildContinuation) throw new Error("Convert build retry omitted continuation state");
+      continue;
+    }
+    if (isRetryableBuildFailure(result) && buildReplacements < 2) {
+      buildReplacements += 1;
+      buildId = null;
+      computeBuildJobId = null;
+      progress({
+        phase: "build-replacement",
+        status: result?.build?.errorDetails?.code || "RETRYABLE_BUILD_FAILURE",
+        poll: buildReplacements,
+      });
       continue;
     }
     const manifest = selectCapabilityManifest(result);
