@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  publishDelta,
   publicationRelationIds,
   retainProtectedEntityReferences,
 } from "../src/context-publication.js";
@@ -57,4 +58,73 @@ test("cross-user publication includes same-ID relation rewires", () => {
     addedRelationIds: ["rel_condition"],
     removedRelationIds: [],
   });
+});
+
+test("publication remaps authoritative relation IDs as well as entity IDs", async () => {
+  let loaded = null;
+  let receivedRelationMap = null;
+  const actor = {
+    client: {
+      call: async () => ({
+        data: {
+          response: {
+            ok: true,
+            nodes: [
+              { localId: "local_car", serverId: "ctx_car" },
+              { localId: "local_clean", serverId: "ctx_clean" },
+            ],
+            relations: [{ localId: "local_condition", serverId: "rel_condition" }],
+          },
+        },
+      }),
+    },
+    workspaceId: "test-workspace",
+    graphStore: { loadSnapshot: (snapshot) => { loaded = snapshot; } },
+  };
+  const after = {
+    entities: {
+      local_car: { id: "local_car", lemmas: ["car"], names: [] },
+      local_clean: { id: "local_clean", lemmas: ["clean"], names: [] },
+    },
+    relations: {
+      local_condition: {
+        id: "local_condition",
+        subj: "local_car",
+        prop: "local_condition_property",
+        obj: "local_clean",
+      },
+    },
+    mentions: {},
+  };
+  const contextPublication = {
+    deltaEnvelope: () => ({ relations: [{ id: "local_condition" }] }),
+    remapGraphSnapshotEntityIds: (snapshot, idMap, relationIdMap) => {
+      receivedRelationMap = relationIdMap;
+      return {
+        ...snapshot,
+        entities: {
+          ctx_car: { ...snapshot.entities.local_car, id: idMap.local_car },
+          ctx_clean: { ...snapshot.entities.local_clean, id: idMap.local_clean },
+        },
+        relations: {
+          rel_condition: {
+            ...snapshot.relations.local_condition,
+            id: relationIdMap.local_condition,
+            subj: idMap.local_car,
+            obj: idMap.local_clean,
+          },
+        },
+      };
+    },
+  };
+
+  await publishDelta(actor, { entities: {}, relations: {}, mentions: {} }, after, {
+    requestId: "publication-relation-remap",
+    sentence: "My car is clean.",
+  }, contextPublication);
+
+  assert.deepEqual(receivedRelationMap, { local_condition: "rel_condition" });
+  assert.equal(loaded.relations.rel_condition.id, "rel_condition");
+  assert.equal(loaded.relations.rel_condition.subj, "ctx_car");
+  assert.equal(loaded.relations.rel_condition.obj, "ctx_clean");
 });

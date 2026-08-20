@@ -99,7 +99,10 @@ export async function publishDelta(actor, before, after, source, contextPublicat
   const idMap = Object.fromEntries((result?.nodes || [])
     .map((node) => [String(node?.localId || ""), String(node?.serverId || "")])
     .filter(([localId, serverId]) => localId && serverId));
-  const remapped = contextPublication.remapGraphSnapshotEntityIds(after, idMap);
+  const relationIdMap = Object.fromEntries((result?.relations || [])
+    .map((relation) => [String(relation?.localId || ""), String(relation?.serverId || "")])
+    .filter(([localId, serverId]) => localId && serverId));
+  const remapped = contextPublication.remapGraphSnapshotEntityIds(after, idMap, relationIdMap);
   retainProtectedEntityReferences(actor, remapped);
   actor.graphStore.loadSnapshot(remapped);
   return { nodes: (result?.nodes || []).length, relations: (result?.relations || []).length };

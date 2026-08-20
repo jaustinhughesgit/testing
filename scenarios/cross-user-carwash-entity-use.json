@@ -19,6 +19,11 @@
         "name": "User 1 records the dirty condition",
         "input": "My Toyota Camry is dirty.",
         "equationId": "self_property_composed_statement"
+      },
+      {
+        "name": "User 1 publishes a human identity",
+        "input": "My name is Austin.",
+        "equationId": "self_property_composed_statement"
       }
     ],
     "build": {
@@ -76,40 +81,34 @@
           "responseSentence": "The status of your Camry is dirty."
         }
       }
-    ]
-  },
-  "installer": {
-    "setup": [
-      {
-        "name": "User 2 owns a truck",
-        "input": "I have a truck.",
-        "equationId": "activity_possession_composed_statement"
-      },
-      {
-        "name": "User 2 names the truck",
-        "input": "My truck is a Ford F150.",
-        "equationId": "owned_entity_alias_composed_statement"
-      },
-      {
-        "name": "User 2 records the dirty condition",
-        "input": "My Ford F150 is dirty.",
-        "equationId": "self_property_composed_statement"
-      }
     ],
-    "invoke": {
-      "name": "User 2 discovers and washes with User 1's app",
-      "input": "Wash my Ford F150.",
-      "subjectValue": "Ford F150",
-      "requestId": "cross-user-carwash-installer-wash",
-      "expect": { "answer": "Your Ford F150 is clean" }
-    },
-    "verify": {
-      "name": "User 2 reads the updated truck status",
-      "input": "What is the status of my F150",
-      "equationId": "owned_entity_status_composed_query",
+    "verifyAfterService": {
+      "name": "Austin sees the service result in his own ContextDB",
+      "input": "Is my Toyota clean or dirty?",
+      "equationId": "owned_entity_choice_composed_query",
       "expect": {
         "answer": ["clean"],
-        "responseSentence": "The status of your F150 is clean."
+        "responseSentence": "Your Toyota is clean."
+      }
+    }
+  },
+  "installer": {
+    "setup": [],
+    "hydrateNamed": ["Austin"],
+    "invoke": {
+      "name": "User 2 discovers Austin's app and washes Austin's car",
+      "input": "Wash Austin's car.",
+      "subjectValue": "Austin's car",
+      "requestId": "cross-user-carwash-installer-wash-austin",
+      "expect": { "answer": "Austin's car is clean" }
+    },
+    "verify": {
+      "name": "User 2 reads Austin's updated car status",
+      "input": "Is Austin's car clean or dirty?",
+      "equationId": "related_object_choice_composed_query",
+      "expect": {
+        "answer": ["clean"],
+        "responseSentence": "Austin's car is clean."
       }
     }
   }

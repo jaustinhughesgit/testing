@@ -5,7 +5,15 @@
 import fs from "node:fs";
 import { StateStore } from "./state-store.js";
 import { OneVarApiClient } from "./api-client.js";
-import { actorProfiles } from "./cross-user-context-scenario.js";
+import {
+  actorProfiles,
+  hydrateCurrentActor,
+  hydrateNamed,
+} from "./cross-user-context-scenario.js";
+import {
+  loadPublishedContextPublication,
+  publishDelta,
+} from "./context-publication.js";
 import { loadPublishedGraphStore } from "./message-scenario.js";
 import {
   authenticatedFetch,
@@ -43,15 +51,22 @@ export function ordinaryEvidence(history, graph) {
     subj: String(relation.subj),
     prop: String(relation.prop),
     obj: String(relation.obj),
+    ...(relation.publisherId ? { publisherId: String(relation.publisherId) } : {}),
+    ...(Number(relation.version) > 0 ? { version: Number(relation.version) } : {}),
+    ...(relation.contextSource ? { contextSource: String(relation.contextSource) } : {}),
   }));
   const invocationText = String(history.at(-1) || "").toLowerCase();
   const speakerCandidates = (graph?.mentions?.speaker?.entities || [])
     .map(String).filter((entityId) => entityIds.has(entityId));
   const speakerId = speakerCandidates.length === 1 ? speakerCandidates[0] : "";
-  const resolvedMention = Object.entries(graph?.mentions || {})
+  const mentionEntries = Object.entries(graph?.mentions || {}).map(([mention, record]) => [
+    mention,
+    (Array.isArray(record?.entities) ? record.entities : [])
+      .map(String).filter((entityId) => entityIds.has(entityId)),
+  ]);
+  const resolvedMention = mentionEntries
     .map(([mention, record]) => {
-      const candidates = (Array.isArray(record?.entities) ? record.entities : [])
-        .map(String).filter((entityId) => entityIds.has(entityId));
+      const candidates = record;
       const owned = speakerId ? candidates.filter((entityId) => relations.some(
         (relation) => relation.subj === speakerId && relation.obj === entityId
       )) : [];
@@ -64,17 +79,69 @@ export function ordinaryEvidence(history, graph) {
       entityId && invocationText.includes(String(mention).toLowerCase())
     ))
     .sort((left, right) => right[0].length - left[0].length)[0];
+  const normalizedInvocation = invocationText.replace(/[\u2018\u2019]/g, "'");
+  const possessive = normalizedInvocation
+    .match(/(?:'s|s')\s+([a-z0-9][a-z0-9 .-]*?)(?=[.,!?]|$)/i);
+  let qualifiedReferent = null;
+  let capabilityQuery = null;
+  if (possessive) {
+    const ownerPrefix = normalizedInvocation.slice(0, possessive.index).trim();
+    const ownerEntry = mentionEntries
+      .filter(([mention]) => {
+        const normalizedMention = String(mention).toLowerCase();
+        return ownerPrefix === normalizedMention || ownerPrefix.endsWith(` ${normalizedMention}`);
+      })
+      .sort((left, right) => right[0].length - left[0].length)[0];
+    const ownerText = String(ownerEntry?.[0] || "").toLowerCase();
+    const objectText = possessive[1].trim();
+    const objectEntry = mentionEntries.find(([mention]) => (
+      String(mention).toLowerCase() === objectText
+    ));
+    const ownerIds = new Set((ownerEntry?.[1] || []).map(String));
+    const objectIds = new Set((objectEntry?.[1] || []).map(String));
+    const ownershipWords = new Set(["have", "has", "own", "owns", "possess", "possesses"]);
+    const entityWords = (id) => [
+      ...(graph?.entities?.[id]?.names || []),
+      ...(graph?.entities?.[id]?.lemmas || []),
+    ].map((value) => String(value).toLowerCase());
+    const targets = [...new Set(relations.filter((relation) => (
+      ownerIds.has(relation.subj)
+      && objectIds.has(relation.obj)
+      && entityWords(relation.prop).some((word) => ownershipWords.has(word))
+    )).map((relation) => relation.obj))];
+    const owners = [...ownerIds].filter((id) => entityIds.has(id));
+    if (owners.length === 1 && targets.length === 1) {
+      const phraseStart = possessive.index - ownerText.length;
+      const phraseEnd = possessive.index + possessive[0].length;
+      qualifiedReferent = {
+        role: "qualified_owner",
+        mention: ownerText,
+        mentionKey: ownerText,
+        entityId: owners[0],
+        resolvedLocally: true,
+        resolution: "contextdb_exact",
+        targetEntityId: targets[0],
+        targetMention: `${ownerText}'s ${objectText}`,
+        targetResolvedLocally: true,
+        targetResolution: "qualified-owner-edge",
+      };
+      capabilityQuery = `${normalizedInvocation.slice(0, phraseStart)}${objectText}`
+        + normalizedInvocation.slice(phraseEnd);
+      capabilityQuery = capabilityQuery.trim();
+    }
+  }
   return {
     recentInputs: history.slice(-20).map((text) => ({ text, inputKind: "statement", semanticEntity: null })),
     relatedContext: { entities, relations },
-    invocationReferents: resolvedMention ? [{
+    ...(capabilityQuery ? { capabilityQuery } : {}),
+    invocationReferents: qualifiedReferent ? [qualifiedReferent] : (resolvedMention ? [{
       role: "qualified_owner",
       mention: resolvedMention[0],
       mentionKey: resolvedMention[0],
       entityId: String(resolvedMention[1]),
       resolvedLocally: true,
       resolution: "contextdb_exact",
-    }] : [],
+    }] : []),
     routing: {
       missCategory: "NEW_SEMANTIC_OPERATION",
       localGraphCandidate: false,
@@ -236,8 +303,12 @@ export function operationSubjectInput(operation, requested = "") {
   throw new Error("The selected Compute operation does not expose one exact invocation subject input");
 }
 
-async function invoke(actorState, runtime, manifest, operation, step, entityUseBindings = []) {
+async function invoke(actorState, runtime, manifest, operation, step, entityUseBindings = [], {
+  contextPublication = null,
+  publishOwnerDelta = false,
+} = {}) {
   const subjectInput = operationSubjectInput(operation, step.subjectInput);
+  const before = actorState.graphStore.getSnapshot();
   const execution = await runtime.invokeComputePath(
     computePath(manifest, operation, { entityUseBindings }),
     {
@@ -250,9 +321,70 @@ async function invoke(actorState, runtime, manifest, operation, step, entityUseB
   );
   if (!execution.ok) throw new Error(`${step.name || step.input}: ${JSON.stringify(execution.error)}`);
   assertEqual(execution.answer, step.expect.answer, step.name || step.input);
+  const delegatedEffects = (execution.contextEffects || []).filter((effect) => (
+    effect?.status === "requested" && effect?.authority === "owner-published-capability"
+  ));
+  if (delegatedEffects.length) {
+    const effectAck = unwrapRouteValue((await actorState.client.call("contextGraphApplyCapabilityEffects", {
+      path: [actorState.workspaceId],
+      body: {
+        schemaVersion: 1,
+        idempotencyKey: `effect-${step.requestId}`,
+        capabilityId: execution.computePlan.capabilityId,
+        entityId: execution.computePlan.entityId,
+        version: execution.computePlan.version,
+        operationId: execution.computePlan.operationId,
+        effects: delegatedEffects,
+        source: { requestId: step.requestId, sentence: step.input },
+      },
+    })).data);
+    if (effectAck?.ok === false) {
+      throw new Error(`${step.name || step.input}: delegated effect failed: ${JSON.stringify(effectAck.error)}`);
+    }
+    const acknowledgements = new Map((effectAck?.effects || []).map((effect) => [
+      String(effect.sourceDependencyId || ""), effect,
+    ]));
+    const valueIdMap = new Map();
+    execution.contextEffects = execution.contextEffects.map((effect) => {
+      if (effect?.authority !== "owner-published-capability") return effect;
+      const acknowledgement = acknowledgements.get(String(effect.sourceDependencyId || ""));
+      if (!acknowledgement?.valueEntityId || !acknowledgement?.relationId) {
+        throw new Error(`${step.name || step.input}: delegated effect acknowledgement was incomplete`);
+      }
+      valueIdMap.set(String(effect.valueEntityId || ""), String(acknowledgement.valueEntityId));
+      return {
+        ...effect,
+        valueEntityId: String(acknowledgement.valueEntityId),
+        targetRelationVersion: Number(acknowledgement.relationVersion || 0),
+        delegatedStatus: String(acknowledgement.status || "applied"),
+      };
+    });
+    execution.mutationOps = (execution.mutationOps || []).flatMap((mutation) => {
+      if (mutation?.type === "entity:create") {
+        const replacementId = valueIdMap.get(String(mutation?.payload?.id || ""));
+        if (!replacementId) return [mutation];
+        if (before.entities?.[replacementId]) return [];
+        return [{ ...mutation, payload: { ...mutation.payload, id: replacementId } }];
+      }
+      if (mutation?.type === "relation:rewire") {
+        const replacementId = valueIdMap.get(String(mutation?.payload?.obj || ""));
+        return replacementId
+          ? [{ ...mutation, payload: { ...mutation.payload, obj: replacementId } }]
+          : [mutation];
+      }
+      return [mutation];
+    });
+  }
   if (execution.mutationOps?.length) {
     const applied = actorState.graphStore.applyMutationOps(execution.mutationOps);
     if (!applied?.ok) throw new Error(`Context effect failed: ${JSON.stringify(applied?.errors || [])}`);
+  }
+  if (publishOwnerDelta && execution.mutationOps?.length) {
+    if (!contextPublication) throw new Error("Owner Context publication runtime is unavailable");
+    await publishDelta(actorState, before, actorState.graphStore.getSnapshot(), {
+      requestId: step.requestId,
+      sentence: step.input,
+    }, contextPublication);
   }
   return execution;
 }
@@ -268,12 +400,21 @@ export async function runCrossUserComputeScenarioObject(scenario, {
   const installer = await actor(config, profiles[installerName]);
   const semanticPaths = await loadPublishedSemanticPathRuntime(config.websiteUrl, fetch);
   const runtime = await loadComputeRuntime(config.websiteUrl, fetch);
+  const contextPublication = await loadPublishedContextPublication(config.websiteUrl, fetch);
+  await hydrateCurrentActor(author, contextPublication);
+  await hydrateCurrentActor(installer, contextPublication);
   const authorHistory = [];
   const authorSetup = [];
 
-  for (const step of scenario.author.setup) {
+  for (const [index, step] of scenario.author.setup.entries()) {
     authorHistory.push(step.input);
-    authorSetup.push(executeEssence(author, semanticPaths, step));
+    const before = author.graphStore.getSnapshot();
+    const execution = executeEssence(author, semanticPaths, step);
+    authorSetup.push(execution);
+    await publishDelta(author, before, author.graphStore.getSnapshot(), {
+      requestId: `carwash-author-setup-${index + 1}`,
+      sentence: step.input,
+    }, contextPublication);
   }
   const built = await buildCapability(author.client, author.workspaceId, {
     ...scenario.author.build,
@@ -292,19 +433,47 @@ export async function runCrossUserComputeScenarioObject(scenario, {
   }
 
   const authorResults = [];
-  for (const step of scenario.author.steps) {
+  for (const [index, step] of scenario.author.steps.entries()) {
     authorHistory.push(step.input);
-    authorResults.push(step.type === "invoke"
-      ? await invoke(author, runtime, built.manifest, authorOperation, step)
-      : executeEssence(author, semanticPaths, step));
+    if (step.type === "invoke") {
+      authorResults.push(await invoke(
+        author,
+        runtime,
+        built.manifest,
+        authorOperation,
+        step,
+        [],
+        { contextPublication, publishOwnerDelta: true }
+      ));
+      continue;
+    }
+    const before = author.graphStore.getSnapshot();
+    const execution = executeEssence(author, semanticPaths, step);
+    authorResults.push(execution);
+    if (execution.kind === "statement") {
+      await publishDelta(author, before, author.graphStore.getSnapshot(), {
+        requestId: `carwash-author-step-${index + 1}`,
+        sentence: step.input,
+      }, contextPublication);
+    }
   }
 
   const installerHistory = [];
   for (const step of scenario.installer.setup) {
     installerHistory.push(step.input);
-    executeEssence(installer, semanticPaths, step);
+    const before = installer.graphStore.getSnapshot();
+    const execution = executeEssence(installer, semanticPaths, step);
+    if (execution.kind === "statement") {
+      await publishDelta(installer, before, installer.graphStore.getSnapshot(), {
+        requestId: `carwash-installer-setup-${installerHistory.length}`,
+        sentence: step.input,
+      }, contextPublication);
+    }
   }
   const invocation = scenario.installer.invoke;
+  if (Array.isArray(scenario.installer.hydrateNamed) && scenario.installer.hydrateNamed.length) {
+    await hydrateNamed(installer, scenario.installer.hydrateNamed, contextPublication);
+  }
   installerHistory.push(invocation.input);
   const publication = await pollCapabilityPublication(
     () => inspectPublishedCapability(installer, built.manifest, invocation.input)
@@ -330,16 +499,30 @@ export async function runCrossUserComputeScenarioObject(scenario, {
     reused.manifest,
     installerOperation,
     invocation,
-    entityUseBindings
+    entityUseBindings,
+    { contextPublication, publishOwnerDelta: false }
   );
   if (!execution.contextEffects?.every((effect) => effect.sourceDependencyId && effect.targetEntityId)) {
     throw new Error("User 2 execution did not use the exact app dependency binding");
   }
   const verification = executeEssence(installer, semanticPaths, scenario.installer.verify);
+  let authorServiceVerification = null;
+  if (scenario.author.verifyAfterService) {
+    await hydrateCurrentActor(author, contextPublication);
+    authorServiceVerification = executeEssence(
+      author,
+      semanticPaths,
+      scenario.author.verifyAfterService
+    );
+  }
 
   return {
     name: scenario.name,
-    passed: scenario.author.setup.length + scenario.author.steps.length + scenario.installer.setup.length + 3,
+    passed: scenario.author.setup.length
+      + scenario.author.steps.length
+      + scenario.installer.setup.length
+      + 3
+      + (scenario.author.verifyAfterService ? 1 : 0),
     capability: {
       cleanStart: true,
       authorBuildStatus,
@@ -359,6 +542,7 @@ export async function runCrossUserComputeScenarioObject(scenario, {
     authorAnswers: authorResults.map((result) => result.answer || result.responseSentence || null).filter(Boolean),
     installerAnswer: execution.answer,
     installerVerification: verification.responseSentence,
+    authorServiceVerification: authorServiceVerification?.responseSentence || null,
   };
 }
 

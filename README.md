@@ -70,8 +70,9 @@ ONEVAR_TEST_PROTECTED_VALUE=4 \
   scenarios/seamless-context-protection-compute.json \
   --profiles seamless-owner,seamless-reader
 
-# Reset before and after a non-protected two-user Compute installation run.
-# User 2 discovers User 1's app but compiles a separate exact-ID-bound Path.
+# Reset before and after a non-protected two-user Compute service run.
+# User 2 discovers User 1's app, compiles an exact-ID-bound local Path, and
+# invokes the owner-published effect on User 1's named public entity.
 ONEVAR_TEST_WEBSITE_URL=https://1var.com \
   node src/cli.js compute-sharing run \
   scenarios/cross-user-carwash-entity-use.json \

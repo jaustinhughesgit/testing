@@ -95,6 +95,71 @@ test("the reset-gated sharing proof rejects a retained functional capability", (
   );
 });
 
+test("owner-qualified evidence separates the named identity from its exact owned target", () => {
+  const graph = {
+    entities: {
+      usr_reader: { id: "usr_reader", names: [], lemmas: ["speaker"] },
+      usr_austin: { id: "usr_austin", names: ["austin"], lemmas: ["person"] },
+      ctx_car: { id: "ctx_car", names: ["toyota camry"], lemmas: ["car"] },
+      term_have: { id: "term_have", names: [], lemmas: ["have"] },
+      term_condition: { id: "term_condition", names: [], lemmas: ["condition"] },
+      ctx_dirty: { id: "ctx_dirty", names: [], lemmas: ["dirty"] },
+    },
+    relations: {
+      rel_have: {
+        id: "rel_have",
+        subj: "usr_austin",
+        prop: "term_have",
+        obj: "ctx_car",
+        publisherId: "austin-workspace",
+        version: 3,
+        contextSource: "ordinary",
+      },
+      rel_condition: {
+        id: "rel_condition",
+        subj: "ctx_car",
+        prop: "term_condition",
+        obj: "ctx_dirty",
+        publisherId: "austin-workspace",
+        version: 7,
+        contextSource: "ordinary",
+      },
+    },
+    mentions: {
+      speaker: { entities: ["usr_reader"] },
+      austin: { entities: ["usr_austin"] },
+      car: { entities: ["ctx_car"] },
+    },
+  };
+
+  const evidence = ordinaryEvidence(["Wash Austin's car."], graph);
+  assert.equal(evidence.capabilityQuery, "wash car.");
+  assert.deepEqual(evidence.invocationReferents, [{
+    role: "qualified_owner",
+    mention: "austin",
+    mentionKey: "austin",
+    entityId: "usr_austin",
+    resolvedLocally: true,
+    resolution: "contextdb_exact",
+    targetEntityId: "ctx_car",
+    targetMention: "austin's car",
+    targetResolvedLocally: true,
+    targetResolution: "qualified-owner-edge",
+  }]);
+  assert.deepEqual(
+    evidence.relatedContext.relations.find((relation) => relation.id === "rel_condition"),
+    {
+      id: "rel_condition",
+      subj: "ctx_car",
+      prop: "term_condition",
+      obj: "ctx_dirty",
+      publisherId: "austin-workspace",
+      version: 7,
+      contextSource: "ordinary",
+    }
+  );
+});
+
 test("the non-protected two-user carwash flow updates only the exact installed entity binding", async () => {
   const semanticPaths = await loadPublishedSemanticPathRuntime("https://website.example", localFetch);
   const computeRuntime = await loadComputeRuntime("https://website.example", localFetch);
