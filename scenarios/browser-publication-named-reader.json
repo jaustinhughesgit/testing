@@ -1,0 +1,15 @@
+{
+  "name": "browser-published named owner is readable",
+  "actors": ["reader"],
+  "steps": [
+    {
+      "type": "question",
+      "actor": "reader",
+      "name": "reader resolves the browser-published owner and car",
+      "input": "Is Austin's car dirty or clean?",
+      "equationId": "related_object_choice_composed_query",
+      "refreshLabels": ["Austin"],
+      "expect": { "answer": ["dirty"] }
+    }
+  ]
+}
