@@ -1,0 +1,43 @@
+{
+  "name": "named user related-object choice query",
+  "actors": ["owner", "reader"],
+  "steps": [
+    {
+      "type": "statement",
+      "actor": "owner",
+      "name": "owner creates a car",
+      "input": "I have a car.",
+      "equationId": "activity_possession_composed_statement"
+    },
+    {
+      "type": "statement",
+      "actor": "owner",
+      "name": "owner names the car",
+      "input": "My car is a Toyota Camry.",
+      "equationId": "owned_entity_alias_composed_statement"
+    },
+    {
+      "type": "statement",
+      "actor": "owner",
+      "name": "owner records the car condition",
+      "input": "My Toyota Camry is dirty.",
+      "equationId": "self_property_composed_statement"
+    },
+    {
+      "type": "statement",
+      "actor": "owner",
+      "name": "owner publishes the exact profile name",
+      "input": "My name is Austin.",
+      "equationId": "self_property_composed_statement"
+    },
+    {
+      "type": "question",
+      "actor": "reader",
+      "name": "reader resolves the named owner and related car",
+      "input": "Is Austin's car clean or dirty?",
+      "equationId": "related_object_choice_composed_query",
+      "refreshLabels": ["Austin"],
+      "expect": { "answer": ["dirty"] }
+    }
+  ]
+}
