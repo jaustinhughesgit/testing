@@ -274,7 +274,20 @@ export async function pollCapabilityPublication(inspect, {
 } = {}) {
   let publication = null;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
-    publication = await inspect();
+    try {
+      publication = await inspect();
+    } catch (error) {
+      if (![429, 502, 503, 504].includes(Number(error?.status)) || attempt >= attempts) throw error;
+      publication = {
+        registryAvailable: false,
+        positionAvailable: false,
+        canUse: false,
+        retryableError: {
+          status: Number(error.status),
+          code: String(error?.response?.error?.code || "TRANSIENT_API_FAILURE"),
+        },
+      };
+    }
     if (publication.registryAvailable && publication.positionAvailable && publication.canUse) {
       return publication;
     }

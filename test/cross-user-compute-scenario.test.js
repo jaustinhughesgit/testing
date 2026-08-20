@@ -84,6 +84,20 @@ test("the sharing runner waits for bounded Position propagation after registrati
   assert.equal(publication.canUse, true);
 });
 
+test("the Position publication gate retries a bounded transient gateway timeout", async () => {
+  let calls = 0;
+  const publication = await pollCapabilityPublication(async () => {
+    calls += 1;
+    if (calls === 1) throw Object.assign(new Error("gateway timeout"), {
+      status: 504,
+      response: { error: { code: "COMPUTE_TIMEOUT" } },
+    });
+    return { registryAvailable: true, positionAvailable: true, canUse: true };
+  }, { attempts: 3, delayMs: 0, wait: async () => {} });
+  assert.equal(calls, 2);
+  assert.equal(publication.positionAvailable, true);
+});
+
 test("the reset-gated sharing proof rejects a retained functional capability", () => {
   assert.equal(
     assertFreshCapabilityBuild({ build: { status: "BUILT_AND_REGISTERED" } }),
