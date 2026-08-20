@@ -6,6 +6,7 @@ import {
   loadPublishedSemanticPathRuntime,
   isRetryableBuildFailure,
   isRetryableDiscoveryFailure,
+  resumableBuildId,
   selectCapabilityManifest,
   selectReusableCapabilityManifest,
 } from "../src/compute-scenario.js";
@@ -82,6 +83,15 @@ test("compute scenarios replace only explicitly retryable terminal build failure
   assert.equal(isRetryableBuildFailure({
     build: { status: "BUILD_PENDING", retryable: true },
   }), false);
+});
+
+test("compute scenarios reconnect to a build claimed before the first response arrived", () => {
+  assert.equal(resumableBuildId({
+    build: { status: "BUILD_IN_PROGRESS", buildId: "build_exact" },
+  }), "build_exact");
+  assert.equal(resumableBuildId({
+    build: { status: "BUILD_PENDING", buildId: "build_wrong_state" },
+  }), "");
 });
 
 test("a command scenario executes the published composed self-property Path", async () => {

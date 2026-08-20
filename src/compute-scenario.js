@@ -61,6 +61,11 @@ export function isRetryableBuildFailure(result) {
     && result?.build?.retryable === true;
 }
 
+export function resumableBuildId(result) {
+  if (String(result?.build?.status || "") !== "BUILD_IN_PROGRESS") return "";
+  return String(result?.build?.buildId || "").trim();
+}
+
 function findManifest(value, seen = new Set()) {
   if (!value || typeof value !== "object" || seen.has(value)) return null;
   seen.add(value);
@@ -199,6 +204,12 @@ export async function buildCapability(client, workspaceId, build, progress = () 
     });
     const status = String(result?.build?.status || "");
     progress({ phase: "build", status, poll: poll + 1 });
+    if (status === "BUILD_IN_PROGRESS") {
+      buildId = resumableBuildId(result);
+      if (!buildId) throw new Error("Convert in-progress build omitted its resumable build id");
+      await wait(2_000);
+      continue;
+    }
     if (status === "BUILD_PENDING") {
       buildId = String(result?.build?.buildId || buildId || "");
       computeBuildJobId = String(result?.build?.backgroundJob?.jobId || computeBuildJobId || "");
