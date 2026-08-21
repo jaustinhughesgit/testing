@@ -128,7 +128,7 @@ export function ordinaryEvidence(history, graph) {
         targetResolvedLocally: true,
         targetResolution: "qualified-owner-edge",
       };
-      capabilityQuery = `${normalizedInvocation.slice(0, phraseStart)}${objectText}`
+      capabilityQuery = `${normalizedInvocation.slice(0, phraseStart)}my ${objectText}`
         + normalizedInvocation.slice(phraseEnd);
       capabilityQuery = capabilityQuery.trim();
     }

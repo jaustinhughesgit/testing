@@ -159,7 +159,7 @@ test("owner-qualified evidence separates the named identity from its exact owned
   };
 
   const evidence = ordinaryEvidence(["Wash Austin's car."], graph);
-  assert.equal(evidence.capabilityQuery, "wash car.");
+  assert.equal(evidence.capabilityQuery, "wash my car.");
   assert.deepEqual(evidence.invocationReferents, [{
     role: "qualified_owner",
     mention: "austin",
